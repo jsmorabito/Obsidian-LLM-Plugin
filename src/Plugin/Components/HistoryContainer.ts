@@ -382,8 +382,10 @@ export class HistoryContainer {
 							this.plugin.settings[settingType].endpointURL = m.url;
 						}
 
-						// Store the file path so historyPush can update the file
+						// Store the file path so historyPush can update the file.
+						// Also sync the ChatContainer's in-memory reference.
 						setHistoryFilePath(this.plugin, this.viewType, file.path);
+						chat.currentHistoryFilePath = file.path;
 
 						header.setHeader(
 							this.plugin.settings[settingType].modelName

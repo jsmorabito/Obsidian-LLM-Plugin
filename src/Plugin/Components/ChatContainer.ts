@@ -98,6 +98,8 @@ export class ChatContainer {
 	pendingContextString: string | null = null; // Context string to inject into API call (not shown in UI)
 	claudeCodeSessionId: string | null = null;
 	useActiveFileContext: boolean = false;
+	/** Tracks the file path for the currently active chat file (file-based history only). Cleared on new chat. */
+	currentHistoryFilePath: string | null = null;
 	/** Optional callback set by the FAB header to sync the title display. */
 	headerTitleCallback: ((title: string) => void) | null = null;
 	chipContainer: HTMLElement | null = null;
@@ -971,14 +973,14 @@ export class ChatContainer {
 	private async historyPushToFile(
 		params: ChatHistoryItem,
 		vaultContext: any,
-		historyFilePath: string | null
+		_historyFilePath: string | null  // kept for signature compatibility; instance var used instead
 	): Promise<void> {
 		const messages = this.getMessages();
 
-		if (historyFilePath) {
+		if (this.currentHistoryFilePath) {
 			// ── Update existing file ──────────────────────────────────────
 			await this.plugin.chatHistory.save(
-				historyFilePath,
+				this.currentHistoryFilePath,
 				"", // title unused on update
 				messages,
 				params,
@@ -1017,6 +1019,7 @@ export class ChatContainer {
 			vaultContext
 		);
 
+		this.currentHistoryFilePath = filePath;
 		setHistoryFilePath(this.plugin, this.viewType, filePath);
 		this.prompt = "";
 	}
@@ -1438,6 +1441,11 @@ export class ChatContainer {
 		const freshStore = new MessageStore();
 		this.switchToStore(freshStore);
 		this.claudeCodeSessionId = null;
+		// Clear the active chat file so the next conversation creates a new file.
+		this.currentHistoryFilePath = null;
+		if (this.plugin.settings.chatHistoryEnabled) {
+			setHistoryFilePath(this.plugin, this.viewType, null);
+		}
 	}
 
 	setDiv(streaming: boolean) {

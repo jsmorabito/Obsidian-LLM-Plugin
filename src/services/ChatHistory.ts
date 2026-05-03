@@ -205,7 +205,7 @@ export class ChatHistory {
 				updated: now,
 				model: item.model,
 				provider,
-				tags: ["llm-chat"],
+				tags: ["llm-chats"],
 				...(contextLinks.length ? { context: contextLinks } : {}),
 			};
 			await this.plugin.app.vault.create(
