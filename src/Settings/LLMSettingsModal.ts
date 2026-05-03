@@ -77,12 +77,14 @@ export class LLMSettingsModal extends Modal {
 			],
 		},
 		{
-			id: "ai-providers",
-			label: "AI Providers",
+			id: "model-providers",
+			label: "Model Providers",
 			items: [
-				{ id: "api-keys", label: "API Keys", icon: "key" },
-				{ id: "ollama", label: "Ollama", icon: "cpu" },
-				{ id: "claude-code", label: "Claude Code", icon: "code-2" },
+				{ id: "anthropic", label: "Anthropic", icon: "bot" },
+				{ id: "openai",    label: "OpenAI",    icon: "sparkles" },
+				{ id: "gemini",    label: "Gemini",    icon: "gem" },
+				{ id: "mistral",   label: "Mistral",   icon: "wind" },
+				{ id: "ollama",    label: "Ollama",    icon: "cpu" },
 			],
 		},
 		{
@@ -237,9 +239,11 @@ export class LLMSettingsModal extends Modal {
 		switch (tabId) {
 			case "general":       this.renderGeneral();     break;
 			case "interface":     this.renderInterface();   break;
-			case "api-keys":      this.renderApiKeys();     break;
+			case "anthropic":     this.renderAnthropic();   break;
+			case "openai":        this.renderOpenAI();      break;
+			case "gemini":        this.renderGemini();      break;
+			case "mistral":       this.renderMistral();     break;
 			case "ollama":        this.renderOllama();      break;
-			case "claude-code":   this.renderClaudeCode();  break;
 			case "history":       this.renderHistory();     break;
 			case "file-context":  this.renderFileContext(); break;
 			case "about":         this.renderAbout();       break;
@@ -404,33 +408,90 @@ export class LLMSettingsModal extends Modal {
 			});
 	}
 
-	private renderApiKeys() {
-		const el = this.mainContentEl;
-		this.addTabHeader(el, "API Keys");
-		const items = this.addSettingGroup(el);
-
-		for (const [type, config] of Object.entries(this.apiKeyConfigs) as [
-			APIKeyType,
-			APIKeyConfig
-		][]) {
-			new Setting(items)
-				.setName(config.name)
-				.setDesc(config.desc)
-				.addText((text) => {
-					text.inputEl.type = "password";
-					text.setValue(this.plugin.settings[config.key] as string);
-					text.onChange((value) => {
-						if (value.trim().length) {
-							(this.plugin.settings[config.key] as string) = value;
-							this.plugin.saveSettings();
-						}
-					});
-				})
-				.addButton((button: ButtonComponent) => {
-					button.setButtonText("Generate");
-					button.onClick(() => window.open(config.generateUrl));
+	private renderApiKeyField(items: HTMLElement, config: APIKeyConfig) {
+		new Setting(items)
+			.setName(config.name)
+			.setDesc(config.desc)
+			.addText((text) => {
+				text.inputEl.type = "password";
+				text.setValue(this.plugin.settings[config.key] as string);
+				text.onChange((value) => {
+					if (value.trim().length) {
+						(this.plugin.settings[config.key] as string) = value;
+						this.plugin.saveSettings();
+					}
 				});
-		}
+			})
+			.addButton((button: ButtonComponent) => {
+				button.setButtonText("Generate");
+				button.onClick(() => window.open(config.generateUrl));
+			});
+	}
+
+	private renderAnthropic() {
+		const el = this.mainContentEl;
+		this.addTabHeader(el, "Anthropic");
+
+		// API key
+		const apiItems = this.addSettingGroup(el);
+		this.renderApiKeyField(apiItems, this.apiKeyConfigs.claude);
+
+		// Claude Code
+		el.createEl("h4", { text: "Claude Code", cls: "llm-dedicated-settings-subheader" });
+		const authItems = this.addSettingGroup(el);
+		new Setting(authItems)
+			.setName("Claude Code OAuth token")
+			.setDesc("OAuth token for authenticating with Claude Code (CLAUDE_CODE_OAUTH_TOKEN).")
+			.addText((text) => {
+				text.inputEl.type = "password";
+				text.setValue(this.plugin.settings.claudeCodeOAuthToken);
+				text.onChange((value) => {
+					this.plugin.settings.claudeCodeOAuthToken = value;
+					this.plugin.saveSettings();
+				});
+			});
+
+		// Linear workspaces
+		el.createEl("h4", { text: "Linear Workspaces", cls: "llm-dedicated-settings-subheader" });
+
+		const workspaceItems = this.addSettingGroup(el);
+		const workspaceListEl = workspaceItems.createDiv({ cls: "linear-workspace-list" });
+		this.renderWorkspaceList(workspaceListEl);
+		const addWorkspaceSetting = new Setting(workspaceItems)
+			.setName("Add workspace")
+			.addButton((button) => {
+				button.setButtonText("+ Add Linear workspace");
+				button.onClick(() => {
+					this.plugin.settings.linearWorkspaces.push({ name: "", apiKey: "" });
+					this.plugin.saveSettings();
+					this.renderWorkspaceList(workspaceListEl);
+				});
+			});
+		const addDesc = addWorkspaceSetting.descEl;
+		addDesc.appendText("Add Linear workspaces with their ");
+		addDesc.createEl("a", { text: "API keys", href: "https://linear.app/settings/account/security" });
+		addDesc.appendText(". Each workspace gets its own MCP server.");
+	}
+
+	private renderOpenAI() {
+		const el = this.mainContentEl;
+		this.addTabHeader(el, "OpenAI");
+		const items = this.addSettingGroup(el);
+		this.renderApiKeyField(items, this.apiKeyConfigs.openai);
+	}
+
+	private renderGemini() {
+		const el = this.mainContentEl;
+		this.addTabHeader(el, "Gemini");
+		const items = this.addSettingGroup(el);
+		this.renderApiKeyField(items, this.apiKeyConfigs.gemini);
+	}
+
+	private renderMistral() {
+		const el = this.mainContentEl;
+		this.addTabHeader(el, "Mistral");
+		const items = this.addSettingGroup(el);
+		this.renderApiKeyField(items, this.apiKeyConfigs.mistral);
 	}
 
 	private renderOllama() {
@@ -485,55 +546,6 @@ export class LLMSettingsModal extends Modal {
 						button.setButtonText("Refresh");
 						button.setDisabled(false);
 					}
-				});
-			});
-	}
-
-	private renderClaudeCode() {
-		const el = this.mainContentEl;
-		this.addTabHeader(el, "Claude Code");
-
-		const authItems = this.addSettingGroup(el);
-		new Setting(authItems)
-			.setName("Claude Code OAuth token")
-			.setDesc(
-				"OAuth token for authenticating with Claude Code (CLAUDE_CODE_OAUTH_TOKEN)."
-			)
-			.addText((text) => {
-				text.inputEl.type = "password";
-				text.setValue(this.plugin.settings.claudeCodeOAuthToken);
-				text.onChange((value) => {
-					this.plugin.settings.claudeCodeOAuthToken = value;
-					this.plugin.saveSettings();
-				});
-			});
-
-		el.createEl("h4", {
-			text: "Linear Workspaces",
-			cls: "llm-dedicated-settings-subheader",
-		});
-
-		const desc = el.createEl("p", { cls: "setting-item-description" });
-		desc.appendText("Add Linear workspaces with their ");
-		desc.createEl("a", {
-			text: "API keys",
-			href: "https://linear.app/settings/account/security",
-		});
-		desc.appendText(". Each workspace gets its own MCP server.");
-
-		// Workspaces and the add-button share one group so they visually card together.
-		const workspaceItems = this.addSettingGroup(el);
-		const workspaceListEl = workspaceItems.createDiv({ cls: "linear-workspace-list" });
-		this.renderWorkspaceList(workspaceListEl);
-
-		new Setting(workspaceItems)
-			.setName("Add workspace")
-			.addButton((button) => {
-				button.setButtonText("+ Add Linear workspace");
-				button.onClick(() => {
-					this.plugin.settings.linearWorkspaces.push({ name: "", apiKey: "" });
-					this.plugin.saveSettings();
-					this.renderWorkspaceList(workspaceListEl);
 				});
 			});
 	}
