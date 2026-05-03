@@ -246,6 +246,18 @@ export default class LLMPlugin extends Plugin {
 		);
 	}
 
+	/**
+	 * Re-renders the empty state in every open chat view so display setting
+	 * changes (e.g. avatar) are visible immediately without a plugin reload.
+	 */
+	refreshAllEmptyStates() {
+		this.fab.refreshEmptyState();
+		this.statusBarButton.refreshEmptyState();
+		this.app.workspace.getLeavesOfType(TAB_VIEW_TYPE).forEach((leaf: WorkspaceLeaf) => {
+			(leaf.view as WidgetView).refreshEmptyState();
+		});
+	}
+
 	/** Open a chat markdown file in the widget tab, creating the widget if needed. */
 	async openChatFileInWidget(filePath: string): Promise<void> {
 		const { workspace } = this.app;

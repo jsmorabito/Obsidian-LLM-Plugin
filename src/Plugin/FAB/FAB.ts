@@ -184,6 +184,11 @@ export class FAB {
 			?.insertAdjacentElement("afterbegin", fabContainer);
 	}
 
+	/** Delegates to ChatContainer so the empty state re-renders with the latest settings. */
+	refreshEmptyState() {
+		this.chatContainer?.refreshEmptyState();
+	}
+
 	removeFab() {
 		this.chatContainer?.destroy();
 		this.chatContainer = null;

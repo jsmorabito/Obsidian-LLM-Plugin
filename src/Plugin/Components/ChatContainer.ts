@@ -1736,6 +1736,17 @@ export class ChatContainer {
 	}
 
 	/**
+	 * If the view is currently showing the empty state (no messages), re-renders
+	 * it so changes to display settings (e.g. avatar) are reflected immediately.
+	 */
+	refreshEmptyState() {
+		if (this.getMessages().length === 0) {
+			this.historyMessages.empty();
+			this.displayNoChatView(this.historyMessages);
+		}
+	}
+
+	/**
 	 * Re-reads the current default model from settings and updates the model
 	 * dropdown to match. Call this whenever a popover is shown after settings
 	 * may have changed (e.g. StatusBarButton.togglePopover, FAB toggle).

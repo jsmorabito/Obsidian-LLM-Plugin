@@ -250,7 +250,7 @@ export class LLMSettingsModal extends Modal {
 
 	private renderGeneral() {
 		const el = this.mainContentEl;
-		this.addTabHeader(el, "General", "Default model and behavior settings.");
+		this.addTabHeader(el, "General");
 		const items = this.addSettingGroup(el);
 
 		// Default model
@@ -309,6 +309,7 @@ export class LLMSettingsModal extends Modal {
 				dropdown.onChange(async (value) => {
 					this.plugin.settings.emptyChatAvatar = value;
 					await this.plugin.saveSettings();
+					this.plugin.refreshAllEmptyStates();
 				});
 			});
 
@@ -340,7 +341,7 @@ export class LLMSettingsModal extends Modal {
 
 	private renderInterface() {
 		const el = this.mainContentEl;
-		this.addTabHeader(el, "Interface", "Control which UI elements are visible.");
+		this.addTabHeader(el, "Interface");
 		const items = this.addSettingGroup(el);
 
 		new Setting(items)
@@ -405,7 +406,7 @@ export class LLMSettingsModal extends Modal {
 
 	private renderApiKeys() {
 		const el = this.mainContentEl;
-		this.addTabHeader(el, "API Keys", "Configure authentication for cloud AI providers.");
+		this.addTabHeader(el, "API Keys");
 		const items = this.addSettingGroup(el);
 
 		for (const [type, config] of Object.entries(this.apiKeyConfigs) as [
@@ -434,7 +435,7 @@ export class LLMSettingsModal extends Modal {
 
 	private renderOllama() {
 		const el = this.mainContentEl;
-		this.addTabHeader(el, "Ollama", "Configure your local Ollama server.");
+		this.addTabHeader(el, "Ollama");
 		const items = this.addSettingGroup(el);
 
 		new Setting(items)
@@ -490,7 +491,7 @@ export class LLMSettingsModal extends Modal {
 
 	private renderClaudeCode() {
 		const el = this.mainContentEl;
-		this.addTabHeader(el, "Claude Code", "Configure the Claude Code agent integration.");
+		this.addTabHeader(el, "Claude Code");
 
 		const authItems = this.addSettingGroup(el);
 		new Setting(authItems)
@@ -539,7 +540,7 @@ export class LLMSettingsModal extends Modal {
 
 	private renderHistory() {
 		const el = this.mainContentEl;
-		this.addTabHeader(el, "History", "Manage chat history and storage settings.");
+		this.addTabHeader(el, "History");
 
 		// Static settings — reset + markdown toggle in one group.
 		const mainItems = this.addSettingGroup(el);
@@ -630,7 +631,7 @@ export class LLMSettingsModal extends Modal {
 
 	private renderFileContext() {
 		const el = this.mainContentEl;
-		this.addTabHeader(el, "File Context", "Configure how AI accesses your vault files.");
+		this.addTabHeader(el, "File Context");
 		const items = this.addSettingGroup(el);
 
 		new Setting(items)
@@ -650,7 +651,7 @@ export class LLMSettingsModal extends Modal {
 
 	private renderAbout() {
 		const el = this.mainContentEl;
-		this.addTabHeader(el, "About", "Credits and support.");
+		this.addTabHeader(el, "About");
 		const items = this.addSettingGroup(el);
 
 		new Setting(items)
@@ -679,17 +680,12 @@ export class LLMSettingsModal extends Modal {
 
 	// ── Helpers ────────────────────────────────────────────────────────────────
 
-	private addTabHeader(el: HTMLElement, title: string, desc: string) {
+	private addTabHeader(el: HTMLElement, title: string) {
 		const header = el.createDiv("llm-dedicated-settings-tab-header");
 		header.createEl("h2", {
 			text: title,
 			cls: "llm-dedicated-settings-tab-title",
 		});
-		header.createEl("p", {
-			text: desc,
-			cls: "llm-dedicated-settings-tab-desc setting-item-description",
-		});
-		// No <hr> — setting-group cards provide visual separation.
 	}
 
 	/**

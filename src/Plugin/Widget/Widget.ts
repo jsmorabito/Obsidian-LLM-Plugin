@@ -203,6 +203,11 @@ export class WidgetView extends ItemView {
 		}
 	}
 
+	/** Delegates to ChatContainer so the empty state re-renders with the latest settings. */
+	refreshEmptyState() {
+		this.chatContainer?.refreshEmptyState();
+	}
+
 	async onClose() {
 		this.chatContainer?.destroy();
 		this.chatContainer = null;
