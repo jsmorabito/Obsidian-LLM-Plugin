@@ -1,6 +1,7 @@
 import { HistoryItem, ViewType } from "Types/types";
 import LLMPlugin, { DEFAULT_SETTINGS } from "main";
 import { ButtonComponent, Notice, TFile } from "obsidian";
+import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
 import { ChatContainer } from "./ChatContainer";
 import { Header } from "./Header";
 import { models } from "utils/models";
@@ -240,25 +241,27 @@ export class HistoryContainer {
 			deleteHistory.setIcon("trash");
 			deleteHistory.onClick((e: MouseEvent) => {
 				e.stopPropagation();
-				this.resetHistory(parentElement);
-				let updatedHistory = this.plugin.settings.promptHistory.filter(
-					(item, idx) => idx !== index
-				);
-				this.plugin.settings.promptHistory = updatedHistory;
-				this.plugin.saveSettings();
-				this.generateHistoryContainer(
-					parentElement,
-					this.plugin.settings.promptHistory,
-					containerToShow,
-					chat,
-					Header
-				);
-				chat.resetChat();
-				chat.resetMessages();
-				Header.setHeader(this.modelName);
-				this.plugin.settings[settingType].historyIndex =
-					DEFAULT_SETTINGS[settingType].historyIndex;
-				this.plugin.saveSettings();
+				new ConfirmDeleteModal(this.plugin.app, () => {
+					this.resetHistory(parentElement);
+					let updatedHistory = this.plugin.settings.promptHistory.filter(
+						(item, idx) => idx !== index
+					);
+					this.plugin.settings.promptHistory = updatedHistory;
+					this.plugin.saveSettings();
+					this.generateHistoryContainer(
+						parentElement,
+						this.plugin.settings.promptHistory,
+						containerToShow,
+						chat,
+						Header
+					);
+					chat.resetChat();
+					chat.resetMessages();
+					Header.setHeader(this.modelName);
+					this.plugin.settings[settingType].historyIndex =
+						DEFAULT_SETTINGS[settingType].historyIndex;
+					this.plugin.saveSettings();
+				}).open();
 			});
 
 			editPrompt.onClick((e: MouseEvent) => {
@@ -418,34 +421,36 @@ export class HistoryContainer {
 			// ── Delete ────────────────────────────────────────────────────
 			deleteBtn.onClick((e: MouseEvent) => {
 				e.stopPropagation();
-				this.plugin.chatHistory
-					.delete(file.path)
-					.then(() => {
-						// If this was the currently open file, clear the reference
-						if (
-							this.plugin.settings[settingType].historyFilePath ===
-							file.path
-						) {
-							setHistoryFilePath(this.plugin, this.viewType, null);
-							chat.resetChat();
-							chat.resetMessages();
-							header.setHeader(
-								this.plugin.settings[settingType].modelName
+				new ConfirmDeleteModal(this.plugin.app, () => {
+					this.plugin.chatHistory
+						.delete(file.path)
+						.then(() => {
+							// If this was the currently open file, clear the reference
+							if (
+								this.plugin.settings[settingType].historyFilePath ===
+								file.path
+							) {
+								setHistoryFilePath(this.plugin, this.viewType, null);
+								chat.resetChat();
+								chat.resetMessages();
+								header.setHeader(
+									this.plugin.settings[settingType].modelName
+								);
+							}
+							// Re-render the list
+							this.resetHistory(parentElement);
+							this.generateHistoryContainer(
+								parentElement,
+								[],
+								containerToShow,
+								chat,
+								header
 							);
-						}
-						// Re-render the list
-						this.resetHistory(parentElement);
-						this.generateHistoryContainer(
-							parentElement,
-							[],
-							containerToShow,
-							chat,
-							header
+						})
+						.catch((e) =>
+							console.error("[HistoryContainer] Failed to delete chat file:", e)
 						);
-					})
-					.catch((e) =>
-						console.error("[HistoryContainer] Failed to delete chat file:", e)
-					);
+				}).open();
 			});
 
 			// ── Rename ────────────────────────────────────────────────────

@@ -243,10 +243,19 @@ export class ChatHistory {
 			.sort((a, b) => b.stat.mtime - a.stat.mtime);
 	}
 
-	/** Move file to Obsidian trash (respects user's trash preference). */
+	/** Delete a chat file permanently. Falls back to adapter.remove() if the
+	 *  vault file cache hasn't indexed the file yet (e.g. rapid create→delete). */
 	async delete(filePath: string): Promise<void> {
 		const file = this.plugin.app.vault.getFileByPath(filePath);
-		if (file) await this.plugin.app.vault.trash(file, true);
+		if (file) {
+			await this.plugin.app.vault.trash(file, true);
+			return;
+		}
+		// Fallback: bypass the file cache and remove directly via the adapter.
+		const exists = await this.plugin.app.vault.adapter.exists(filePath);
+		if (exists) {
+			await this.plugin.app.vault.adapter.remove(filePath);
+		}
 	}
 
 	/**
