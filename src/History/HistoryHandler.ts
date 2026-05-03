@@ -5,6 +5,8 @@ export class History {
 	constructor(private plugin: LLMPlugin) {}
 
 	push(message_context: HistoryItem) {
+		// When file-based history is active, writes are handled by ChatHistory.
+		if (this.plugin.settings.chatHistoryEnabled) return true;
 		try {
 			let history = this.plugin.settings.promptHistory;
 			history.push(message_context);
@@ -17,11 +19,13 @@ export class History {
 	}
 
 	update(index: number, messages: Message[]) {
+		if (this.plugin.settings.chatHistoryEnabled) return;
 		this.plugin.settings.promptHistory[index].messages = messages;
 		this.plugin.saveSettings();
 	}
 
 	reset() {
+		if (this.plugin.settings.chatHistoryEnabled) return;
 		this.plugin.settings.promptHistory = [];
 		this.plugin.saveSettings();
 	}
@@ -29,6 +33,7 @@ export class History {
 	//take in an index from the selected chat history
 	//overwrite history with new prompt/additional prompt
 	overwriteHistory(messages: Message[], index: number) {
+		if (this.plugin.settings.chatHistoryEnabled) return;
 		const historyItem = this.plugin.settings.promptHistory[index];
 		historyItem.messages = messages;
 		this.plugin.settings.promptHistory[index] = historyItem;

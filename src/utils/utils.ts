@@ -482,6 +482,7 @@ export function getViewInfo(
 			modelName: plugin.settings.modalSettings.modelName,
 			modelType: plugin.settings.modalSettings.modelType,
 			historyIndex: plugin.settings.modalSettings.historyIndex,
+			historyFilePath: plugin.settings.modalSettings.historyFilePath ?? null,
 			modelEndpoint: plugin.settings.modalSettings.modelEndpoint,
 			endpointURL: plugin.settings.modalSettings.endpointURL,
 			contextSettings: plugin.settings.modalSettings.contextSettings,
@@ -497,6 +498,7 @@ export function getViewInfo(
 			modelName: plugin.settings.widgetSettings.modelName,
 			modelType: plugin.settings.widgetSettings.modelType,
 			historyIndex: plugin.settings.widgetSettings.historyIndex,
+			historyFilePath: plugin.settings.widgetSettings.historyFilePath ?? null,
 			modelEndpoint: plugin.settings.widgetSettings.modelEndpoint,
 			endpointURL: plugin.settings.widgetSettings.endpointURL,
 			contextSettings: plugin.settings.widgetSettings.contextSettings,
@@ -512,6 +514,7 @@ export function getViewInfo(
 			modelName: plugin.settings.fabSettings.modelName,
 			modelType: plugin.settings.fabSettings.modelType,
 			historyIndex: plugin.settings.fabSettings.historyIndex,
+			historyFilePath: plugin.settings.fabSettings.historyFilePath ?? null,
 			modelEndpoint: plugin.settings.fabSettings.modelEndpoint,
 			endpointURL: plugin.settings.fabSettings.endpointURL,
 			contextSettings: plugin.settings.fabSettings.contextSettings,
@@ -531,6 +534,7 @@ export function getViewInfo(
 		modelName: "",
 		modelType: "",
 		historyIndex: -1,
+		historyFilePath: null,
 		modelEndpoint: "",
 		endpointURL: "",
 		contextSettings: {
@@ -541,6 +545,24 @@ export function getViewInfo(
 		},
 		agentSettings: { permissionMode: "ask" },
 	};
+}
+
+export function setHistoryFilePath(
+	plugin: LLMPlugin,
+	viewType: ViewType,
+	filePath: string | null
+) {
+	const settings: Record<string, string> = {
+		modal: "modalSettings",
+		widget: "widgetSettings",
+		"floating-action-button": "fabSettings",
+	};
+	const settingType = settings[viewType] as
+		| "modalSettings"
+		| "widgetSettings"
+		| "fabSettings";
+	plugin.settings[settingType].historyFilePath = filePath;
+	plugin.saveSettings();
 }
 
 export function changeDefaultModel(model: string, plugin: LLMPlugin) {

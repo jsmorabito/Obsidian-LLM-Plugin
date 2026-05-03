@@ -363,6 +363,79 @@ export default class SettingsView extends PluginSettingTab {
 					});
 			});
 
+		// ── Markdown chat history (experimental) ─────────────────────────────
+		const historySection = containerEl.createDiv();
+		historySection.createEl("h3", { text: "Markdown chat history (experimental)" });
+
+		const migrationEl = historySection.createDiv();
+
+		const renderHistorySection = () => {
+			migrationEl.empty();
+
+			if (!this.plugin.settings.chatHistoryEnabled) return;
+
+			// Folder path input
+			new Setting(migrationEl)
+				.setName("History folder")
+				.setDesc("Vault folder where chat files will be saved.")
+				.addText((text) => {
+					text.setPlaceholder("LLM Chats");
+					text.setValue(this.plugin.settings.chatHistoryFolder);
+					text.onChange(async (value) => {
+						this.plugin.settings.chatHistoryFolder = value.trim() || "LLM Chats";
+						await this.plugin.saveSettings();
+					});
+				});
+
+			// Migration — only show if there's legacy history to migrate
+			if (
+				!this.plugin.settings.chatHistoryMigrated &&
+				this.plugin.settings.promptHistory.length > 0
+			) {
+				new Setting(migrationEl)
+					.setName("Migrate existing history")
+					.setDesc(
+						`You have ${this.plugin.settings.promptHistory.length} saved conversation${this.plugin.settings.promptHistory.length !== 1 ? "s" : ""} in the old format. Click to convert them to markdown files.`
+					)
+					.addButton((button) => {
+						button.setButtonText("Migrate now");
+						button.setCta();
+						button.onClick(async () => {
+							button.setButtonText("Migrating…");
+							button.setDisabled(true);
+							await this.plugin.chatHistory.migrate(
+								this.plugin.settings.promptHistory
+							);
+							this.plugin.settings.chatHistoryMigrated = true;
+							await this.plugin.saveSettings();
+							renderHistorySection();
+						});
+					});
+			} else if (this.plugin.settings.chatHistoryMigrated) {
+				migrationEl.createEl("p", {
+					text: "✓ Legacy history has been migrated.",
+					cls: "setting-item-description",
+				});
+			}
+		};
+
+		new Setting(historySection)
+			.setName("Save chats as markdown files")
+			.setDesc(
+				"Store each conversation as a .md file in your vault instead of inside the plugin's data file. Gives you full Obsidian search, tags, and backlinks. Disable to return to the default behaviour."
+			)
+			.addToggle((toggle) => {
+				toggle
+					.setValue(this.plugin.settings.chatHistoryEnabled)
+					.onChange(async (value) => {
+						this.plugin.settings.chatHistoryEnabled = value;
+						await this.plugin.saveSettings();
+						renderHistorySection();
+					});
+			});
+
+		renderHistorySection();
+
 		// Add donation button
 		new Setting(containerEl)
 			.setName("Donate")

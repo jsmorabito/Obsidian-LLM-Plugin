@@ -108,6 +108,8 @@ export type ViewSettings = {
 	modelEndpoint: string;
 	endpointURL: string;
 	historyIndex: number;
+	/** File path of the currently open chat file (used when chatHistoryEnabled). */
+	historyFilePath: string | null;
 	imageSettings: ImageSettings;
 	chatSettings: ChatSettings;
 	contextSettings: ContextSettings;

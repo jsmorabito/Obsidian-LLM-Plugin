@@ -56,9 +56,12 @@ import {
 	geminiMessage,
 	openAIMessage,
 	setHistoryIndex,
+	setHistoryFilePath,
 } from "utils/utils";
 import { AgentLoop, AgentCallbacks } from "services/AgentLoop";
 import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
 import { models, modelNames } from "utils/models";
 import { Header } from "./Header";
 import { MessageStore } from "./MessageStore";
@@ -894,8 +897,25 @@ export class ChatContainer {
 	}
 
 	historyPush(params: HistoryItem, vaultContext?: any) {
-		const { modelName, historyIndex, modelEndpoint } =
+		const { modelName, historyIndex, historyFilePath, modelEndpoint } =
 			getViewInfo(this.plugin, this.viewType);
+
+		// ── File-based path (chatHistoryEnabled, chat only) ───────────────────
+		if (
+			this.plugin.settings.chatHistoryEnabled &&
+			modelEndpoint !== "images"
+		) {
+			this.historyPushToFile(
+				params as ChatHistoryItem,
+				vaultContext,
+				historyFilePath
+			).catch((e) =>
+				console.error("[ChatContainer] Failed to save chat file:", e)
+			);
+			return;
+		}
+
+		// ── Legacy array-based path ───────────────────────────────────────────
 		if (historyIndex > -1) {
 			this.plugin.history.overwriteHistory(
 				this.getMessages(),
@@ -945,6 +965,151 @@ export class ChatContainer {
 		setHistoryIndex(this.plugin, this.viewType, length);
 		this.plugin.saveSettings();
 		this.prompt = "";
+	}
+
+	/** File-based save path — called when chatHistoryEnabled is true. */
+	private async historyPushToFile(
+		params: ChatHistoryItem,
+		vaultContext: any,
+		historyFilePath: string | null
+	): Promise<void> {
+		const messages = this.getMessages();
+
+		if (historyFilePath) {
+			// ── Update existing file ──────────────────────────────────────
+			await this.plugin.chatHistory.save(
+				historyFilePath,
+				"", // title unused on update
+				messages,
+				params,
+				vaultContext
+			);
+			return;
+		}
+
+		// ── New conversation ──────────────────────────────────────────────
+		const conversationId = crypto.randomUUID();
+		this.registry.set(conversationId, this.messageStore);
+
+		// Show the first user message in the header immediately while the
+		// title is being generated in the background.
+		if (this.headerTitleCallback) {
+			const firstUser = messages.find((m) => m.role === "user");
+			if (firstUser) this.headerTitleCallback(firstUser.content);
+		}
+
+		// Generate a short title, falling back to word-truncation on failure.
+		const title = await this.plugin.chatHistory.generateTitle(
+			messages,
+			() => this.generateConversationTitle(messages, params)
+		);
+
+		// Update header with the real generated title.
+		if (this.headerTitleCallback) {
+			this.headerTitleCallback(title);
+		}
+
+		const filePath = await this.plugin.chatHistory.save(
+			null,
+			title,
+			messages,
+			params,
+			vaultContext
+		);
+
+		setHistoryFilePath(this.plugin, this.viewType, filePath);
+		this.prompt = "";
+	}
+
+	/**
+	 * Ask the active provider to produce a short conversation title.
+	 * Throws on failure so ChatHistory.generateTitle can fall back.
+	 */
+	private async generateConversationTitle(
+		messages: Message[],
+		params: ChatHistoryItem
+	): Promise<string> {
+		const { model, modelType } = getViewInfo(this.plugin, this.viewType);
+
+		const titleRequest: Array<{ role: "user" | "assistant"; content: string }> =
+			[
+				...messages
+					.filter((m) => m.role !== "system")
+					.slice(0, 4)
+					.map((m) => ({
+						role: m.role as "user" | "assistant",
+						content: m.content,
+					})),
+				{
+					role: "user" as const,
+					content:
+						"Generate a very short title for this conversation in 5 words or fewer. Output only the title — no punctuation, no quotes, no explanation.",
+				},
+			];
+
+		// ── OpenAI / Mistral / Ollama (all OpenAI-compatible) ─────────────
+		if (
+			modelType === openAI ||
+			modelType === mistral ||
+			modelType === ollama
+		) {
+			const apiKey =
+				modelType === openAI
+					? this.plugin.settings.openAIAPIKey
+					: modelType === mistral
+					? this.plugin.settings.mistralAPIKey
+					: "ollama";
+			const baseURL =
+				modelType === mistral
+					? "https://api.mistral.ai/v1"
+					: modelType === ollama
+					? `${this.plugin.settings.ollamaHost}/v1`
+					: undefined;
+
+			const client = new OpenAI({
+				apiKey,
+				baseURL,
+				dangerouslyAllowBrowser: true,
+			});
+			const resp = await client.chat.completions.create({
+				model,
+				messages: titleRequest,
+				max_tokens: 20,
+				temperature: 0.3,
+			});
+			return resp.choices[0]?.message?.content?.trim() ?? "";
+		}
+
+		// ── Claude ────────────────────────────────────────────────────────
+		if (modelType === claude) {
+			const client = new Anthropic({
+				apiKey: this.plugin.settings.claudeAPIKey,
+				dangerouslyAllowBrowser: true,
+			});
+			const resp = await client.messages.create({
+				model,
+				max_tokens: 20,
+				messages: titleRequest,
+			});
+			const block = resp.content[0];
+			return block.type === "text" ? block.text.trim() : "";
+		}
+
+		// ── Gemini ────────────────────────────────────────────────────────
+		if (modelType === gemini) {
+			const client = new GoogleGenAI({
+				apiKey: this.plugin.settings.geminiAPIKey,
+			});
+			const contents = titleRequest.map((m) => ({
+				role: m.role === "user" ? "user" : "model",
+				parts: [{ text: m.content }],
+			}));
+			const resp = await client.models.generateContent({ model, contents });
+			return resp.text?.trim() ?? "";
+		}
+
+		// GPT4All — not worth a separate HTTP call; let the fallback handle it.
+		throw new Error(`Title generation not supported for provider: ${modelType}`);
 	}
 
 	auto_height(elem: TextAreaComponent, parentElement: Element) {

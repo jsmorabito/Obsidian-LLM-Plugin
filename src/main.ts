@@ -8,6 +8,7 @@ import {
 } from "./Types/types";
 
 import { History } from "History/HistoryHandler";
+import { ChatHistory } from "services/ChatHistory";
 import { FAB } from "Plugin/FAB/FAB";
 import { StatusBarButton } from "Plugin/StatusBar/StatusBarButton";
 import { RecentChatsButton } from "Plugin/StatusBar/RecentChatsButton";
@@ -53,6 +54,9 @@ export interface LLMPluginSettings {
 	widgetSettings: ViewSettings;
 	fabSettings: ViewSettings;
 	promptHistory: HistoryItem[];
+	chatHistoryEnabled: boolean;
+	chatHistoryMigrated: boolean;
+	chatHistoryFolder: string;
 	claudeAPIKey: string;
 	claudeCodeOAuthToken: string;
 	linearWorkspaces: Array<{ name: string; apiKey: string }>;
@@ -78,6 +82,7 @@ const defaultSettings = {
 	modelEndpoint: chat,
 	endpointURL: "/chat/completions",
 	historyIndex: -1,
+	historyFilePath: null as string | null,
 	imageSettings: {
 		numberOfImages: 1,
 		response_format: "url" as ResponseFormat,
@@ -121,6 +126,9 @@ export const DEFAULT_SETTINGS: LLMPluginSettings = {
 		...defaultSettings,
 	},
 	promptHistory: [],
+	chatHistoryEnabled: false,
+	chatHistoryMigrated: false,
+	chatHistoryFolder: "LLM Chats",
 	openAIAPIKey: "",
 	claudeAPIKey: "",
 	mistralAPIKey: "",
@@ -144,6 +152,7 @@ export default class LLMPlugin extends Plugin {
 	os: OperatingSystem;
 	settings: LLMPluginSettings;
 	history: History;
+	chatHistory: ChatHistory;
 	fab: FAB;
 	conversationRegistry: ConversationRegistry;
 	ribbonIconEl: HTMLElement | null = null;
@@ -187,6 +196,7 @@ export default class LLMPlugin extends Plugin {
 			}, 500);
 		}
 		this.history = new History(this);
+		this.chatHistory = new ChatHistory(this);
 	}
 
 	onunload() {

@@ -1,10 +1,10 @@
 import { HistoryItem, ViewType } from "Types/types";
 import LLMPlugin, { DEFAULT_SETTINGS } from "main";
-import { ButtonComponent, Notice } from "obsidian";
+import { ButtonComponent, Notice, TFile } from "obsidian";
 import { ChatContainer } from "./ChatContainer";
 import { Header } from "./Header";
 import { models } from "utils/models";
-import { getSettingType } from "utils/utils";
+import { getSettingType, setHistoryFilePath } from "utils/utils";
 import logo from "assets/LLMgal.svg";
 
 export class HistoryContainer {
@@ -79,6 +79,32 @@ export class HistoryContainer {
 		chat: ChatContainer,
 		Header: Header
 	) {
+		if (this.plugin.settings.chatHistoryEnabled) {
+			// Async file-based path — load files then render
+			this.plugin.chatHistory
+				.list()
+				.then((files) => {
+					this.resetHistory(parentElement);
+					if (!files.length) {
+						this.displayNoHistoryView(parentElement);
+						return;
+					}
+					this.generateFileHistoryContainer(
+						parentElement,
+						files,
+						containerToShow,
+						chat,
+						Header
+					);
+				})
+				.catch((e) => {
+					console.error("[HistoryContainer] Failed to list chat files:", e);
+					this.displayNoHistoryView(parentElement);
+				});
+			return;
+		}
+
+		// ── Legacy array-based path ───────────────────────────────────────────
 		if (!history.length) {
 			this.displayNoHistoryView(parentElement);
 			return;
@@ -260,6 +286,204 @@ export class HistoryContainer {
 				editPrompt.buttonEl.setAttr("style", "display: inline-flex");
 				savePrompt.buttonEl.setAttr("style", "display: none");
 				disableHistory(parentElement.children, index, true);
+			});
+		});
+	}
+
+	/**
+	 * Render history items sourced from markdown files in the vault.
+	 * Titles come from the `title` frontmatter field via the metadata cache,
+	 * falling back to the filename if the cache hasn't built yet.
+	 */
+	private generateFileHistoryContainer(
+		parentElement: HTMLElement,
+		files: TFile[],
+		containerToShow: HTMLElement,
+		chat: ChatContainer,
+		header: Header
+	) {
+		parentElement.removeClass("llm-justify-content-center");
+		const settingType = getSettingType(this.viewType);
+
+		const toggleContentEditable = (el: HTMLElement, toggle: boolean) => {
+			el.setAttr("contenteditable", toggle);
+		};
+
+		const disableOtherItems = (
+			collection: HTMLCollection,
+			activeIndex: number,
+			disable: boolean
+		) => {
+			for (let i = 0; i < collection.length; i++) {
+				if (i !== activeIndex && disable) {
+					collection.item(i)?.addClass("llm-no-pointer");
+				} else {
+					collection.item(i)?.removeClass("llm-no-pointer");
+				}
+			}
+		};
+
+		files.forEach((file, index) => {
+			// Prefer the cached frontmatter title; fall back to the filename stem.
+			const cachedTitle =
+				this.plugin.app.metadataCache.getFileCache(file)?.frontmatter
+					?.title;
+			const displayTitle = cachedTitle ?? file.basename;
+
+			const item = parentElement.createDiv();
+			item.className = "setting-item";
+			item.setAttr("contenteditable", "false");
+			item.addClass("llm-history-item", "llm-flex");
+
+			const text = item.createEl("p");
+			text.textContent = displayTitle;
+
+			const buttonsDiv = item.createDiv();
+			buttonsDiv.addClass("history-buttons-div", "llm-flex");
+
+			const editBtn = new ButtonComponent(buttonsDiv);
+			const saveBtn = new ButtonComponent(buttonsDiv);
+			const deleteBtn = new ButtonComponent(buttonsDiv);
+
+			editBtn.setIcon("pencil");
+			saveBtn.setIcon("save");
+			deleteBtn.setIcon("trash");
+
+			editBtn.buttonEl.addClass("edit-prompt-button");
+			saveBtn.buttonEl.addClass("save-prompt-button");
+			deleteBtn.buttonEl.addClass("llm-delete-history-button", "mod-warning");
+
+			saveBtn.buttonEl.setAttr("style", "display: none; visibility: hidden");
+			editBtn.buttonEl.setAttr("style", "visibility: hidden");
+			deleteBtn.buttonEl.setAttr("style", "visibility: hidden");
+
+			// ── Load conversation on click ────────────────────────────────
+			const loadConversation = () => {
+				this.plugin.chatHistory
+					.load(file.path)
+					.then(({ meta, messages }) => {
+						chat.resetChat();
+
+						// Restore messages into the store
+						chat.messageStore.setMessages(messages);
+						chat.generateIMLikeMessages(messages);
+
+						parentElement.hide();
+						containerToShow.show();
+						containerToShow.querySelector(".messages-div")?.scroll(0, 9999);
+
+						// Update view model settings to match the stored model
+						if (meta.model && models[meta.model]) {
+							const m = models[meta.model];
+							this.plugin.settings[settingType].model = meta.model;
+							this.plugin.settings[settingType].modelName = meta.model;
+							this.plugin.settings[settingType].modelType = m.type;
+							this.plugin.settings[settingType].modelEndpoint = m.endpoint;
+							this.plugin.settings[settingType].endpointURL = m.url;
+						}
+
+						// Store the file path so historyPush can update the file
+						setHistoryFilePath(this.plugin, this.viewType, file.path);
+
+						header.setHeader(
+							this.plugin.settings[settingType].modelName
+						);
+						header.resetHistoryButton();
+						header.setTitle(meta.title ?? displayTitle);
+						header.showTitle();
+					})
+					.catch((e) => {
+						console.error("[HistoryContainer] Failed to load chat file:", e);
+						new Notice("Failed to load conversation.");
+					});
+			};
+
+			item.addEventListener("click", loadConversation);
+
+			item.addEventListener("mouseenter", () => {
+				if (text.contentEditable === "false" || text.contentEditable === "inherit") {
+					editBtn.buttonEl.setAttr("style", "visibility: visible");
+					deleteBtn.buttonEl.setAttr("style", "visibility: visible");
+				}
+			});
+			item.addEventListener("mouseleave", () => {
+				if (text.contentEditable === "false" || text.contentEditable === "inherit") {
+					editBtn.buttonEl.setAttr("style", "visibility: hidden");
+					deleteBtn.buttonEl.setAttr("style", "visibility: hidden");
+				}
+			});
+
+			// ── Delete ────────────────────────────────────────────────────
+			deleteBtn.onClick((e: MouseEvent) => {
+				e.stopPropagation();
+				this.plugin.chatHistory
+					.delete(file.path)
+					.then(() => {
+						// If this was the currently open file, clear the reference
+						if (
+							this.plugin.settings[settingType].historyFilePath ===
+							file.path
+						) {
+							setHistoryFilePath(this.plugin, this.viewType, null);
+							chat.resetChat();
+							chat.resetMessages();
+							header.setHeader(
+								this.plugin.settings[settingType].modelName
+							);
+						}
+						// Re-render the list
+						this.resetHistory(parentElement);
+						this.generateHistoryContainer(
+							parentElement,
+							[],
+							containerToShow,
+							chat,
+							header
+						);
+					})
+					.catch((e) =>
+						console.error("[HistoryContainer] Failed to delete chat file:", e)
+					);
+			});
+
+			// ── Rename ────────────────────────────────────────────────────
+			editBtn.onClick((e: MouseEvent) => {
+				e.stopPropagation();
+				item.removeEventListener("click", loadConversation);
+				toggleContentEditable(text, true);
+				text.focus();
+				editBtn.buttonEl.setAttr("style", "display: none");
+				saveBtn.buttonEl.setAttr("style", "display: inline-flex");
+				disableOtherItems(parentElement.children, index, true);
+			});
+
+			saveBtn.onClick((e: MouseEvent) => {
+				e.stopPropagation();
+				const newTitle = text.textContent?.trim();
+				if (!newTitle) {
+					new Notice("Title must not be empty.");
+					return;
+				}
+				this.plugin.chatHistory
+					.rename(file.path, newTitle)
+					.then((newPath) => {
+						// If this was the currently open file, update the stored path
+						if (
+							this.plugin.settings[settingType].historyFilePath ===
+							file.path
+						) {
+							setHistoryFilePath(this.plugin, this.viewType, newPath);
+						}
+						item.addEventListener("click", loadConversation);
+						toggleContentEditable(text, false);
+						editBtn.buttonEl.setAttr("style", "display: inline-flex");
+						saveBtn.buttonEl.setAttr("style", "display: none");
+						disableOtherItems(parentElement.children, index, false);
+					})
+					.catch((e) => {
+						console.error("[HistoryContainer] Failed to rename chat file:", e);
+						new Notice("Failed to rename conversation.");
+					});
 			});
 		});
 	}
