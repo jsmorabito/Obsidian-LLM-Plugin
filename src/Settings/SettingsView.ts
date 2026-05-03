@@ -2,17 +2,14 @@ import LLMPlugin from "main";
 import {
 	App,
 	ButtonComponent,
-	DropdownComponent,
 	PluginSettingTab,
 	Setting,
 	TextComponent,
 } from "obsidian";
-import { changeDefaultModel, getGpt4AllPath, fetchOllamaModels } from "utils/utils";
+import { fetchOllamaModels } from "utils/utils";
 import { models, modelNames, buildOllamaModels } from "utils/models";
-import { GPT4All, ollama } from "utils/constants";
 import logo from "assets/LLMguy.svg";
 import { FAB } from "Plugin/FAB/FAB";
-import { ChatModal2 } from "Plugin/Modal/ChatModal2";
 import { LLMSettingsModal } from "Settings/LLMSettingsModal";
 
 type APIKeyType = 'claude' | 'gemini' | 'openai' | 'mistral';
@@ -100,169 +97,6 @@ export default class SettingsView extends PluginSettingTab {
 				dropdown.onChange((value) => {
 					this.showApiKeyInput(value as APIKeyType, apiKeySection);
 				});
-			});
-
-		// Add Default Model Selector
-		new Setting(containerEl)
-			.setClass('default-model-selector')
-			.setName("Set default model")
-			.setDesc("Sets the default LLM you want to use for the plugin")
-			.addDropdown((dropdown: DropdownComponent) => {
-				let valueChanged = false;
-				dropdown.addOption(
-					modelNames[this.plugin.settings.defaultModel],
-					"Select default model"
-				);
-
-				// Merge static models with dynamic Ollama models
-				const ollamaBuilt = buildOllamaModels(this.plugin.settings.ollamaModels);
-				const allModels = { ...models, ...ollamaBuilt.models };
-				const allModelNames = { ...modelNames, ...ollamaBuilt.names };
-
-				let keys = Object.keys(allModels);
-				for (let model of keys) {
-					const type = allModels[model].type;
-					// Local providers: always show
-					if (type === ollama) {
-						dropdown.addOption(allModels[model].model, model);
-						continue;
-					}
-					// GPT4All: only show if the model file exists locally
-					if (type === GPT4All) {
-						const gpt4AllPath = getGpt4AllPath(this.plugin);
-						const fullPath = `${gpt4AllPath}/${allModels[model].model}`;
-						const exists = this.plugin.fileSystem.existsSync(fullPath);
-						if (exists) {
-							dropdown.addOption(allModels[model].model, model);
-						}
-						continue;
-					}
-					// All other providers: always show regardless of API key presence
-					dropdown.addOption(allModels[model].model, model);
-				}
-				dropdown.onChange((change) => {
-					valueChanged = true;
-					// For Ollama models, we need to use the merged dicts
-					const name = allModelNames[change];
-					if (name && allModels[name]?.type === ollama) {
-						// Register dynamically so changeDefaultModel can find it
-						models[name] = allModels[name];
-						modelNames[change] = name;
-					}
-					changeDefaultModel(change, this.plugin)
-				});
-				dropdown.selectEl.addEventListener('blur', () => {
-					if (valueChanged) {
-						this.plugin.saveSettings();
-						valueChanged = false;
-					}
-				});
-				dropdown.setValue(this.plugin.settings.modalSettings.model);
-			});
-
-		// Empty chat avatar selector
-		new Setting(containerEl)
-			.setName("Empty chat avatar")
-			.setDesc("Choose which avatar to display on empty/new chats")
-			.addDropdown((dropdown: DropdownComponent) => {
-				dropdown.addOption("llm-gal", "LLM Gal");
-				dropdown.addOption("llm-guy", "LLM Guy");
-				dropdown.addOption("zen-kid", "Zen Kid");
-				dropdown.addOption("ninja-cat", "Ninja Cat");
-				dropdown.setValue(this.plugin.settings.emptyChatAvatar || "llm-gal");
-				dropdown.onChange(async (value) => {
-					this.plugin.settings.emptyChatAvatar = value;
-					await this.plugin.saveSettings();
-				});
-			});
-
-		// Agent mode permission setting
-		new Setting(containerEl)
-			.setName("Agent permission mode")
-			.setDesc(
-				"Controls when the agent asks for your approval before performing actions in your vault."
-			)
-			.addDropdown((dropdown: DropdownComponent) => {
-				dropdown.addOption("ask", "Ask (approve writes, auto-allow reads)");
-				dropdown.addOption("auto-approve", "Auto-approve all (no prompts)");
-				dropdown.addOption("ask-everything", "Ask for everything");
-				dropdown.addOption("read-only", "Read-only (deny any writes)");
-
-				// Read from modal settings as the canonical source
-				const currentMode =
-					this.plugin.settings.modalSettings.agentSettings?.permissionMode ?? "ask";
-				dropdown.setValue(currentMode);
-
-				dropdown.onChange(async (value) => {
-					const mode = value as import("../Types/types").PermissionMode;
-					// Apply to all three views so it behaves as a global setting
-					this.plugin.settings.modalSettings.agentSettings = { permissionMode: mode };
-					this.plugin.settings.widgetSettings.agentSettings = { permissionMode: mode };
-					this.plugin.settings.fabSettings.agentSettings = { permissionMode: mode };
-					await this.plugin.saveSettings();
-				});
-			});
-
-		// Add Toggle FAB button
-		new Setting(containerEl)
-			.setName("Toggle FAB")
-			.setDesc("Toggles the LLM floating action button")
-			.addToggle((value) => {
-				value
-					.setValue(this.plugin.settings.showFAB)
-					.onChange(async (value) => {
-						this.fab.removeFab();
-						this.plugin.settings.showFAB = value;
-						await this.plugin.saveSettings();
-						if (value) {
-							this.fab.regenerateFAB();
-						}
-					});
-			});
-
-		// Add Toggle Status Bar Button
-		new Setting(containerEl)
-			.setName("Toggle Ask AI in status bar")
-			.setDesc("Shows an 'Ask AI' button in the status bar that opens the chat popover")
-			.addToggle((toggle) => {
-				toggle
-					.setValue(this.plugin.settings.showStatusBarButton)
-					.onChange(async (value) => {
-						this.plugin.settings.showStatusBarButton = value;
-						await this.plugin.saveSettings();
-						if (value) {
-							this.plugin.statusBarButton.generate();
-							this.plugin.recentChatsButton.generate();
-						} else {
-							this.plugin.statusBarButton.remove();
-							this.plugin.recentChatsButton.remove();
-						}
-					});
-			});
-
-		// Add Toggle Ribbon Icon
-		new Setting(containerEl)
-			.setName("Show ribbon icon")
-			.setDesc("Show the 'Ask a question' icon in the ribbon bar")
-			.addToggle((toggle) => {
-				toggle
-					.setValue(this.plugin.settings.showRibbonIcon)
-					.onChange(async (value) => {
-						this.plugin.settings.showRibbonIcon = value;
-						await this.plugin.saveSettings();
-						if (value && !this.plugin.ribbonIconEl) {
-							this.plugin.ribbonIconEl = this.plugin.addRibbonIcon(
-								"bot",
-								"Ask a question",
-								() => {
-									new ChatModal2(this.plugin).open();
-								}
-							);
-						} else if (!value && this.plugin.ribbonIconEl) {
-							this.plugin.ribbonIconEl.remove();
-							this.plugin.ribbonIconEl = null;
-						}
-					});
 			});
 
 		// Ollama settings

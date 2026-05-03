@@ -200,6 +200,10 @@ export class StatusBarButton {
 
 			this.popoverEl.style.display = "flex";
 
+			// Sync the model dropdown to reflect any default-model change made
+			// since the popover was first built (buildPopover runs once on load).
+			this.chatContainer?.syncModelDropdown();
+
 			// Refresh the active-file chip to whichever file is open now.
 			this.chatContainer?.refreshActiveFileChip();
 

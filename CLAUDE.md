@@ -24,13 +24,14 @@ This is an Obsidian plugin that provides LLM chat interfaces with support for Op
 3. Registers commands and views
 4. Initializes MessageStore, History, Assistants, and FAB components
 
-### View Architecture (Three UI Implementations)
+### View Architecture (Four UI Implementations)
 
-The plugin provides three ways to access the chat interface, all using the same underlying components:
+The plugin provides four ways to access the chat interface, all using the same underlying components:
 
 - **Modal** (`src/Plugin/Modal/ChatModal2.ts`) - Popup dialog
 - **Widget** (`src/Plugin/Widget/Widget.ts`) - Sidebar tab view
 - **FAB** (`src/Plugin/FAB/FAB.ts`) - Floating Action Button with expandable chat
+- **StatusBarButton** (`src/Plugin/StatusBar/StatusBarButton.ts`) - "Ask AI" button in the status bar that opens a popover chat. Uses `viewType: "floating-action-button"` and shares `fabSettings` with the FAB. Its popover is built once on `generate()` (not per-open), so call `chatContainer.syncModelDropdown()` whenever the popover is shown to keep the model dropdown in sync with settings.
 
 Each view composes these shared components from `src/Plugin/Components/`:
 - `Header.ts` - Tab navigation (Chat/History/Settings/Assistants)

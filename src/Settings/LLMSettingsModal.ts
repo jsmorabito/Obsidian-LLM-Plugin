@@ -102,6 +102,7 @@ export class LLMSettingsModal extends Modal {
 
 	private coreModalEl: HTMLElement | null = null;
 	private resizeHandler: (() => void) | null = null;
+	private outsideClickHandler: ((e: MouseEvent) => void) | null = null;
 
 	constructor(app: App, plugin: LLMPlugin, fab: FAB) {
 		super(app);
@@ -155,6 +156,17 @@ export class LLMSettingsModal extends Modal {
 		this.resizeHandler = () => this.matchCoreModal();
 		window.addEventListener("resize", this.resizeHandler);
 
+		// Close when the user clicks outside the modal. We defer registration by
+		// one tick so the click that opened the modal doesn't immediately close it.
+		this.outsideClickHandler = (e: MouseEvent) => {
+			if (!this.modalEl.contains(e.target as Node)) {
+				this.close();
+			}
+		};
+		setTimeout(() => {
+			document.addEventListener("mousedown", this.outsideClickHandler!);
+		}, 0);
+
 		// mod-sidebar-layout tells Obsidian's CSS to apply the two-column layout.
 		modalEl.addClass("mod-sidebar-layout");
 
@@ -176,6 +188,10 @@ export class LLMSettingsModal extends Modal {
 		if (this.resizeHandler) {
 			window.removeEventListener("resize", this.resizeHandler);
 			this.resizeHandler = null;
+		}
+		if (this.outsideClickHandler) {
+			document.removeEventListener("mousedown", this.outsideClickHandler);
+			this.outsideClickHandler = null;
 		}
 		this.contentEl.empty();
 	}

@@ -567,10 +567,9 @@ export function setHistoryFilePath(
 
 export function changeDefaultModel(model: string, plugin: LLMPlugin) {
 	plugin.settings.defaultModel = model;
-	// Question -> why do we not update the FAB model here?
 	const modelName = modelNames[model];
-	// Modal settings
 
+	// Modal settings
 	plugin.settings.modalSettings.model = model;
 	plugin.settings.modalSettings.modelName = modelName;
 	plugin.settings.modalSettings.modelType = models[modelName].type;
@@ -583,6 +582,13 @@ export function changeDefaultModel(model: string, plugin: LLMPlugin) {
 	plugin.settings.widgetSettings.modelType = models[modelName].type;
 	plugin.settings.widgetSettings.endpointURL = models[modelName].url;
 	plugin.settings.widgetSettings.modelEndpoint = models[modelName].endpoint;
+
+	// FAB settings
+	plugin.settings.fabSettings.model = model;
+	plugin.settings.fabSettings.modelName = modelName;
+	plugin.settings.fabSettings.modelType = models[modelName].type;
+	plugin.settings.fabSettings.endpointURL = models[modelName].url;
+	plugin.settings.fabSettings.modelEndpoint = models[modelName].endpoint;
 
 	plugin.saveSettings();
 }

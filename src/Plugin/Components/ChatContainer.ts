@@ -107,6 +107,8 @@ export class ChatContainer {
 	chipContainer: HTMLElement | null = null;
 	scanButton: ButtonComponent | null = null;
 	activeFileForChip: { name: string } | null = null;
+	/** Stored so StatusBarButton (and FAB) can re-sync the displayed model after settings change. */
+	private modelDropdown: DropdownComponent | null = null;
 
 	constructor(
 		private plugin: LLMPlugin,
@@ -1253,7 +1255,8 @@ export class ChatContainer {
 		// Model dropdown
 		const settingType = getSettingType(this.viewType);
 		const viewSettings = this.plugin.settings[settingType];
-		const modelDropdown = new DropdownComponent(toolbarSection);
+		this.modelDropdown = new DropdownComponent(toolbarSection);
+		const modelDropdown = this.modelDropdown;
 		modelDropdown.selectEl.addClass("llm-model-select");
 		const { openAIAPIKey, claudeAPIKey, geminiAPIKey, mistralAPIKey } = this.plugin.settings;
 		for (const modelDisplayName of Object.keys(models)) {
@@ -1730,6 +1733,17 @@ export class ChatContainer {
 				this.syncChips();
 			}
 		}
+	}
+
+	/**
+	 * Re-reads the current default model from settings and updates the model
+	 * dropdown to match. Call this whenever a popover is shown after settings
+	 * may have changed (e.g. StatusBarButton.togglePopover, FAB toggle).
+	 */
+	syncModelDropdown() {
+		if (!this.modelDropdown) return;
+		const settingType = getSettingType(this.viewType);
+		this.modelDropdown.setValue(this.plugin.settings[settingType].model);
 	}
 
 	newChat() {
