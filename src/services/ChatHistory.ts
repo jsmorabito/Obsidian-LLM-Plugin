@@ -3,6 +3,7 @@ import LLMPlugin from "main";
 import { ChatHistoryItem, HistoryItem, Message, VaultContext } from "Types/types";
 
 export interface ChatFileMeta {
+	type: "Chat";
 	title: string;
 	created: string;
 	updated: string;
@@ -72,6 +73,7 @@ export class ChatHistory {
 	/** Render YAML frontmatter manually (avoids external YAML serialiser dep). */
 	private buildFrontmatter(meta: ChatFileMeta): string {
 		const lines: string[] = [
+			`type: Chat`,
 			`title: "${meta.title.replace(/"/g, '\\"')}"`,
 			`created: "${meta.created}"`,
 			`updated: "${meta.updated}"`,
@@ -200,6 +202,7 @@ export class ChatHistory {
 			const slug = this.slugify(title);
 			const newPath = await this.uniquePath(slug);
 			const meta: ChatFileMeta = {
+				type: "Chat",
 				title,
 				created: now,
 				updated: now,
