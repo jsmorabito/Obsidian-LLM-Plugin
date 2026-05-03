@@ -98,6 +98,8 @@ export class ChatContainer {
 	pendingContextString: string | null = null; // Context string to inject into API call (not shown in UI)
 	claudeCodeSessionId: string | null = null;
 	useActiveFileContext: boolean = false;
+	/** Resolves when the most recent generateIMLikeMessages render is complete. */
+	private renderingPromise: Promise<void> = Promise.resolve();
 	/** Tracks the file path for the currently active chat file (file-based history only). Cleared on new chat. */
 	currentHistoryFilePath: string | null = null;
 	/** Optional callback set by the FAB header to sync the title display. */
@@ -146,7 +148,10 @@ export class ChatContainer {
 		// Each view has its own store, so the messages passed here are always
 		// the right ones for this view — no cross-view filtering needed.
 		this.resetChat();
-		this.generateIMLikeMessages(messages);
+		// Store the promise so handleGenerateClick can await it before appending
+		// the streaming/thinking div. Without this, setDiv() races with the async
+		// message render and the thinking animation lands above the user message.
+		this.renderingPromise = this.generateIMLikeMessages(messages);
 	}
 
 	getMessages() {
@@ -665,6 +670,10 @@ export class ChatContainer {
 
 		const userMessage = { role: "user" as const, content: this.prompt };
 		this.messageStore.addMessage(userMessage);
+		// Wait for the async DOM render triggered by addMessage to complete before
+		// calling setDiv/showThinkingAnimation — otherwise the thinking animation
+		// is appended before the user message and appears at the top of the chat.
+		await this.renderingPromise;
 		const params = this.getParams(modelEndpoint, model, modelType);
 		try {
 			this.previewText = "";
