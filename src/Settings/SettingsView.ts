@@ -13,6 +13,7 @@ import { GPT4All, ollama } from "utils/constants";
 import logo from "assets/LLMguy.svg";
 import { FAB } from "Plugin/FAB/FAB";
 import { ChatModal2 } from "Plugin/Modal/ChatModal2";
+import { LLMSettingsModal } from "Settings/LLMSettingsModal";
 
 type APIKeyType = 'claude' | 'gemini' | 'openai' | 'mistral';
 
@@ -63,6 +64,18 @@ export default class SettingsView extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
+
+		// Open settings button — launches the dedicated settings modal
+		new Setting(containerEl)
+			.setName("Plugin settings")
+			.setDesc("Open the dedicated settings panel with all configuration options.")
+			.addButton((button: ButtonComponent) => {
+				button.setButtonText("Open settings");
+				button.setCta();
+				button.onClick(() => {
+					new LLMSettingsModal(this.app, this.plugin, this.fab).open();
+				});
+			});
 
 		// Adds reset history button
 		new Setting(containerEl)

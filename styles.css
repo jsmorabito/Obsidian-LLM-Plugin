@@ -1299,3 +1299,66 @@ button.llm-permission-allow {
 	color: var(--text-muted);
 	text-align: center;
 }
+
+/* ── Dedicated Settings Modal ─────────────────────────────────────────────── */
+
+/* Fallback size when opened outside the settings panel. */
+.llm-dedicated-settings-modal {
+	width: min(960px, 94vw);
+	height: min(740px, 88vh);
+}
+
+/* Matches .modal.mod-settings .vertical-tab-header in app.css exactly,
+   since our modal uses .llm-dedicated-settings-modal instead of .mod-settings. */
+.llm-dedicated-settings-modal .vertical-tab-header {
+	flex: 0 0 25%;
+	min-width: 180px;
+	max-width: 250px;
+	overflow: auto;
+	border-inline-end: var(--border-width) solid var(--divider-color);
+}
+
+/* Tab section header — sits above the first setting-group card. */
+.llm-dedicated-settings-tab-header {
+	margin-bottom: var(--size-4-4);
+}
+
+/* Re-use Obsidian's own h2 sizing / weight from the settings panel. */
+.llm-dedicated-settings-tab-title {
+	font-size: var(--h2-size);
+	font-weight: var(--h2-weight);
+	color: var(--h2-color);
+	margin: 0 0 var(--size-4-1);
+}
+
+.llm-dedicated-settings-tab-desc {
+	margin: 0;
+}
+
+/* Inline sub-section headings (e.g. "Linear Workspaces"). */
+.llm-dedicated-settings-subheader {
+	font-size: var(--h4-size);
+	font-weight: var(--h4-weight);
+	color: var(--text-normal);
+	margin: var(--size-4-5) 0 var(--size-4-2);
+}
+
+/* Ollama discovered-models helper text. */
+.llm-settings-ollama-models {
+	margin: 0 0 var(--size-4-3);
+}
+
+/* About tab credits block. */
+.llm-dedicated-settings-about-credits {
+	margin-top: var(--size-4-6);
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-1);
+}
+
+.llm-dedicated-settings-about-title {
+	font-size: var(--h3-size);
+	font-weight: var(--h3-weight);
+	color: var(--text-normal);
+	margin: 0;
+}
