@@ -110,11 +110,7 @@ export class StatusBarButton {
 			this.chatContainer,
 			this.header
 		);
-		settingsContainer.generateSettingsContainer(
-			settingsContainerDiv,
-			this.header,
-			() => this.chatContainer?.syncChips()
-		);
+		settingsContainer.generateSettingsContainer(settingsContainerDiv);
 
 		// Resize handle — same logic as FAB, but repositions after each drag
 		// so the popover stays anchored above the status bar.

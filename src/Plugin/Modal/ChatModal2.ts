@@ -64,11 +64,7 @@ export class ChatModal2 extends Modal {
 			chatContainer,
 			header
 		);
-		settingsContainer.generateSettingsContainer(
-			settingsContainerDiv,
-			header,
-			() => chatContainer.syncChips()
-		);
+		settingsContainer.generateSettingsContainer(settingsContainerDiv);
 	}
 
 	onClose() {

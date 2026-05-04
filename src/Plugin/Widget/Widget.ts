@@ -182,11 +182,7 @@ export class WidgetView extends ItemView {
 			chatContainer,
 			header
 		);
-		settingsContainer.generateSettingsContainer(
-			settingsContainerDiv,
-			header,
-			() => chatContainer.syncChips()
-		);
+		settingsContainer.generateSettingsContainer(settingsContainerDiv);
 
 		// Auto-load a conversation if one was pending (set by "Open in sidebar/tab" from the FAB).
 		const pendingIndex = this.plugin.pendingWidgetHistoryIndex;
