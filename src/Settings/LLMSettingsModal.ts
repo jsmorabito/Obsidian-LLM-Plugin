@@ -204,9 +204,11 @@ export class LLMSettingsModal extends Modal {
 					cls: `vertical-tab-nav-item tappable${isActive ? " is-active" : ""}`,
 				});
 
-				// vertical-tab-nav-item-icon is the core icon container class.
-				const iconEl = itemEl.createDiv("vertical-tab-nav-item-icon");
-				setIcon(iconEl, item.icon);
+				// Only show icons for Core Settings tabs.
+				if (section.id === "core") {
+					const iconEl = itemEl.createDiv("vertical-tab-nav-item-icon");
+					setIcon(iconEl, item.icon);
+				}
 
 				itemEl.createSpan({ text: item.label });
 
