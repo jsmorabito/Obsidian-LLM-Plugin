@@ -5,7 +5,7 @@ import {
 	PluginSettingTab,
 	Setting,
 } from "obsidian";
-import logo from "assets/LLMguy.svg";
+import logo from "assets/LLM-Squad.svg";
 import { FAB } from "Plugin/FAB/FAB";
 import { LLMSettingsModal } from "Settings/LLMSettingsModal";
 
@@ -32,6 +32,16 @@ export default class SettingsView extends PluginSettingTab {
 				button.setCta();
 				button.onClick(() => {
 					new LLMSettingsModal(this.app, this.plugin, this.fab).open();
+				});
+			});
+
+		new Setting(containerEl)
+			.setName("Support development")
+			.setDesc("Consider donating to support ongoing development.")
+			.addButton((button: ButtonComponent) => {
+				button.setButtonText("Donate");
+				button.onClick(() => {
+					window.open("https://www.buymeacoffee.com/johnny1093");
 				});
 			});
 

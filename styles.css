@@ -892,8 +892,12 @@ div.im-like-message.llm-widget-chat-message > p {
 
 	> svg {
 		color: var(--color-accent-1);
-		width: 90px;
+		width: 180px;
 		height: 90px;
+
+		> path {
+			fill: var(--color-accent-1);
+		}
 	}
 }
 
@@ -1335,13 +1339,7 @@ button.llm-permission-allow {
 	margin: 0;
 }
 
-/* Inline sub-section headings (e.g. "Linear Workspaces"). */
-.llm-dedicated-settings-subheader {
-	font-size: var(--h4-size);
-	font-weight: var(--h4-weight);
-	color: var(--text-normal);
-	margin: var(--size-4-5) 0 var(--size-4-2);
-}
+
 
 /* Ollama discovered-models helper text. */
 .llm-settings-ollama-models {

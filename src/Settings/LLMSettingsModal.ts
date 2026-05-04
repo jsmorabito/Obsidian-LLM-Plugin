@@ -72,8 +72,9 @@ export class LLMSettingsModal extends Modal {
 			id: "core",
 			label: "Core Settings",
 			items: [
-				{ id: "general", label: "General", icon: "settings" },
-				{ id: "interface", label: "Interface", icon: "layout-dashboard" },
+				{ id: "general",   label: "General",   icon: "settings" },
+				{ id: "interface", label: "Interface",  icon: "layout-dashboard" },
+				{ id: "chat",      label: "Chat",       icon: "message-square" },
 			],
 		},
 		{
@@ -86,19 +87,6 @@ export class LLMSettingsModal extends Modal {
 				{ id: "mistral",   label: "Mistral",   icon: "wind" },
 				{ id: "ollama",    label: "Ollama",    icon: "cpu" },
 			],
-		},
-		{
-			id: "chat",
-			label: "Chat & History",
-			items: [
-				{ id: "history", label: "History", icon: "history" },
-				{ id: "file-context", label: "File Context", icon: "file-text" },
-			],
-		},
-		{
-			id: "about-section",
-			label: "About",
-			items: [{ id: "about", label: "About", icon: "info" }],
 		},
 	];
 
@@ -244,9 +232,7 @@ export class LLMSettingsModal extends Modal {
 			case "gemini":        this.renderGemini();      break;
 			case "mistral":       this.renderMistral();     break;
 			case "ollama":        this.renderOllama();      break;
-			case "history":       this.renderHistory();     break;
-			case "file-context":  this.renderFileContext(); break;
-			case "about":         this.renderAbout();       break;
+			case "chat":          this.renderChat();         break;
 		}
 	}
 
@@ -437,8 +423,7 @@ export class LLMSettingsModal extends Modal {
 		this.renderApiKeyField(apiItems, this.apiKeyConfigs.claude);
 
 		// Claude Code
-		el.createEl("h4", { text: "Claude Code", cls: "llm-dedicated-settings-subheader" });
-		const authItems = this.addSettingGroup(el);
+		const authItems = this.addSettingGroup(el, "Claude Code");
 		new Setting(authItems)
 			.setName("Claude Code OAuth token")
 			.setDesc("OAuth token for authenticating with Claude Code (CLAUDE_CODE_OAUTH_TOKEN).")
@@ -452,9 +437,7 @@ export class LLMSettingsModal extends Modal {
 			});
 
 		// Linear workspaces
-		el.createEl("h4", { text: "Linear Workspaces", cls: "llm-dedicated-settings-subheader" });
-
-		const workspaceItems = this.addSettingGroup(el);
+		const workspaceItems = this.addSettingGroup(el, "Linear Workspaces");
 		const workspaceListEl = workspaceItems.createDiv({ cls: "linear-workspace-list" });
 		this.renderWorkspaceList(workspaceListEl);
 		const addWorkspaceSetting = new Setting(workspaceItems)
@@ -550,12 +533,28 @@ export class LLMSettingsModal extends Modal {
 			});
 	}
 
-	private renderHistory() {
+	private renderChat() {
 		const el = this.mainContentEl;
-		this.addTabHeader(el, "History");
+		this.addTabHeader(el, "Chat");
 
-		// Static settings — reset + markdown toggle in one group.
-		const mainItems = this.addSettingGroup(el);
+		// File context
+		const contextItems = this.addSettingGroup(el);
+		new Setting(contextItems)
+			.setName("Enable file context")
+			.setDesc(
+				"Allow AI to access vault files. When disabled, the AI will not have access to any files from your vault."
+			)
+			.addToggle((toggle) => {
+				toggle
+					.setValue(this.plugin.settings.enableFileContext)
+					.onChange(async (value) => {
+						this.plugin.settings.enableFileContext = value;
+						await this.plugin.saveSettings();
+					});
+			});
+
+		// History
+		const mainItems = this.addSettingGroup(el, "History");
 
 		new Setting(mainItems)
 			.setName("Save chats as markdown files")
@@ -641,55 +640,6 @@ export class LLMSettingsModal extends Modal {
 		renderHistorySection();
 	}
 
-	private renderFileContext() {
-		const el = this.mainContentEl;
-		this.addTabHeader(el, "File Context");
-		const items = this.addSettingGroup(el);
-
-		new Setting(items)
-			.setName("Enable file context")
-			.setDesc(
-				"Allow AI to access vault files. When disabled, the AI will not have access to any files from your vault."
-			)
-			.addToggle((toggle) => {
-				toggle
-					.setValue(this.plugin.settings.enableFileContext)
-					.onChange(async (value) => {
-						this.plugin.settings.enableFileContext = value;
-						await this.plugin.saveSettings();
-					});
-			});
-	}
-
-	private renderAbout() {
-		const el = this.mainContentEl;
-		this.addTabHeader(el, "About");
-		const items = this.addSettingGroup(el);
-
-		new Setting(items)
-			.setName("Support development")
-			.setDesc("Consider donating to support ongoing development.")
-			.addButton((button: ButtonComponent) => {
-				button.setButtonText("Buy me a coffee ☕");
-				button.setCta();
-				button.onClick(() => window.open("https://www.buymeacoffee.com/johnny1093"));
-			});
-
-		const creditsEl = el.createDiv({ cls: "llm-dedicated-settings-about-credits" });
-		creditsEl.createEl("p", {
-			text: "LLM Plugin",
-			cls: "llm-dedicated-settings-about-title",
-		});
-		creditsEl.createEl("p", {
-			text: "By Johnny✨, Ryan Mahoney, and Evan Harris",
-			cls: "setting-item-description",
-		});
-		creditsEl.createEl("p", {
-			text: `Version ${this.plugin.manifest.version}`,
-			cls: "setting-item-description",
-		});
-	}
-
 	// ── Helpers ────────────────────────────────────────────────────────────────
 
 	private addTabHeader(el: HTMLElement, title: string) {
@@ -701,12 +651,16 @@ export class LLMSettingsModal extends Modal {
 	}
 
 	/**
-	 * Creates a .setting-group > .setting-items wrapper that matches the card
-	 * grouping structure used throughout Obsidian's core settings panel.
-	 * Pass the returned element as the container for new Setting() calls.
+	 * Creates a .setting-group with an optional heading that matches Obsidian's
+	 * native pattern: div.setting-group > div.setting-item.setting-item-heading
+	 *                                   > div.setting-items > div.setting-item …
+	 * Returns the .setting-items element for appending Setting instances.
 	 */
-	private addSettingGroup(parent: HTMLElement): HTMLElement {
+	private addSettingGroup(parent: HTMLElement, heading?: string): HTMLElement {
 		const group = parent.createDiv("setting-group");
+		if (heading) {
+			new Setting(group).setName(heading).setHeading();
+		}
 		return group.createDiv("setting-items");
 	}
 
