@@ -357,6 +357,7 @@ export class Header {
 				this.chatHistoryButton!,
 			]);
 			this.setHeader(modelName);
+			this.setTitle("");
 			this.showTitle();
 			chatContainerDiv.show();
 			settingsContainerDiv.hide();
