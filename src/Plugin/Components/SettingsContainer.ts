@@ -5,7 +5,7 @@ import { models } from "utils/models";
 import {
 	getSettingType,
 } from "utils/utils";
-import { chat, claudeCodeEndpoint, GPT4All, messages, openAI } from "utils/constants"
+import { chat, claudeCodeEndpoint, GPT4All, images, messages, openAI } from "utils/constants"
 
 export class SettingsContainer {
 	viewType: ViewType;
@@ -28,7 +28,7 @@ export class SettingsContainer {
 		const viewSettings = this.plugin.settings[settingType];
 		const endpoint = viewSettings.modelEndpoint;
 		const modelType = viewSettings.modelType;
-		if (endpoint === "images") {
+		if (endpoint === images) {
 			this.generateImageSettings(parentContainer, viewSettings.model);
 		}
 		if (endpoint === "moderations") {

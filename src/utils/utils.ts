@@ -9,6 +9,7 @@ import {
 	claudeValidationModel,
 	gemini,
 	gemini2FlashStableModel,
+	images,
 	ollama,
 } from "utils/constants";
 import { query as claudeCodeQuery } from "@anthropic-ai/claude-agent-sdk";
@@ -421,7 +422,7 @@ export async function openAIMessage(
 		return stream;
 	}
 
-	if (endpointType === "images") {
+	if (endpointType === images) {
 		const {
 			prompt,
 			model,

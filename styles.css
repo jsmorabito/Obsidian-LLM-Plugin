@@ -216,7 +216,7 @@
 }
 
 .llm-modal-settings-container.llm-flex {
-	padding-top: 16px;
+	padding-top: var(--size-4-4);
 }
 
 .modal:not(.mod-settings) .llm-modal-chat-history-container .setting-item.llm-history-item {
@@ -942,7 +942,7 @@ div.im-like-message.llm-widget-chat-message > p {
 
 .llm-hero-names {
 	font-size: var(--font-ui-small);
-	margin: 0px;
+	margin: 0;
 }
 
 .llm-text-muted,
@@ -970,7 +970,7 @@ div.im-like-message.llm-widget-chat-message > p {
 
 .llm-vector-file {
 	border-radius: var(--radius-m);
-	padding: 6px;
+	padding: var(--size-4-1);
 	width: 100%;
 	text-align: start;
 	border-bottom: 2px solid var(--background-modifier-border);
@@ -1027,7 +1027,7 @@ div.im-like-message.llm-widget-chat-message > p {
 	display: inline-flex;
 	align-items: center;
 	flex-shrink: 0;
-	--icon-size: 12px;
+	--icon-size: var(--icon-xs);
 	--icon-stroke: 1.5;
 	color: var(--text-faint);
 }
@@ -1046,7 +1046,7 @@ div.im-like-message.llm-widget-chat-message > p {
 	font-size: var(--font-ui-small);
 	line-height: 1;
 	user-select: none;
-	padding: 0 2px;
+	padding: 0 var(--size-2-1);
 }
 
 .llm-context-chip-remove:hover {
@@ -1306,6 +1306,65 @@ button.llm-permission-allow {
 	font-size: var(--font-ui-small);
 	color: var(--text-muted);
 	text-align: center;
+}
+
+/* ── File Selector Modal ──────────────────────────────────────────────────── */
+
+.llm-file-selector-list {
+	max-height: 400px;
+	overflow-y: auto;
+	margin-top: var(--size-4-3);
+	margin-bottom: var(--size-4-3);
+}
+
+.llm-file-selector-buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--size-4-2);
+	margin-top: var(--size-4-3);
+}
+
+.llm-file-selector-item {
+	display: flex;
+	align-items: center;
+	padding: var(--size-4-2);
+	border-bottom: var(--border-width) solid var(--background-modifier-border);
+}
+
+.llm-file-selector-item:last-child {
+	border-bottom: none;
+}
+
+.llm-file-selector-checkbox {
+	margin-right: var(--size-4-2);
+	flex-shrink: 0;
+}
+
+.llm-file-selector-info {
+	flex: 1;
+	min-width: 0;
+}
+
+.llm-file-selector-name {
+	font-weight: var(--font-medium);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.llm-file-selector-path {
+	font-size: var(--font-ui-smaller);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.llm-file-selector-count {
+	margin-top: var(--size-4-3);
+	text-align: center;
+	font-weight: var(--font-medium);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
 }
 
 /* ── Dedicated Settings Modal ─────────────────────────────────────────────── */

@@ -74,9 +74,20 @@ Provider SDKs used:
 ### Key Files
 
 - `src/Types/types.ts` - TypeScript interfaces (ChatParams, ImageParams, etc.)
-- `src/utils/constants.ts` - Provider/model/endpoint constants
+- `src/utils/constants.ts` - Provider/model/endpoint constants (includes `images`, `chat`, `messages`, `assistant`, `claudeCodeEndpoint`, etc.)
 - `src/utils/models.ts` - Model configuration definitions
 - `src/utils/utils.ts` - API validation and helper functions
+
+### Constants Convention
+
+All endpoint type strings live in `src/utils/constants.ts` and must be imported as constants rather than compared against raw string literals. The full set of endpoint constants is: `chat`, `messages`, `images`, `claudeCodeEndpoint`. Provider type constants are: `openAI`, `claude`, `claudeCode`, `gemini`, `mistral`, `ollama`, `GPT4All`.
+
+### CSS / Styling Convention
+
+- Always use Obsidian CSS variables (`--size-4-2`, `--font-ui-small`, `--text-muted`, `--interactive-accent`, etc.) instead of hardcoded px/em/color values.
+- Use `--icon-xs` / `--icon-s` for icon sizes rather than raw pixel values.
+- Component-specific styles belong in `styles.css` as named classes — never use inline `element.style.*` assignments in TypeScript (use `.addClass()` with a CSS class instead).
+- `FileSelector.ts` uses the `.llm-file-selector-*` family of classes defined in `styles.css`.
 
 ## Build Configuration
 

@@ -1,5 +1,5 @@
 import { Model } from "Types/types";
-import { claude, claudeCode, claudeCodeEndpoint, chat, gemini, gemini2FlashStableModel, gemini2FlashLiteModel, gemini25ProModel, gemini25FlashModel, gemini25FlashLiteModel, gemini3ProPreviewModel, geminiFlashLatestModel, geminiFlashLiteLatestModel, GPT4All, messages, ollama, mistral, claudeSonnet46Model, claudeOpus46Model, claudeHaiku45Model } from "utils/constants"
+import { claude, claudeCode, claudeCodeEndpoint, chat, gemini, gemini2FlashStableModel, gemini2FlashLiteModel, gemini25ProModel, gemini25FlashModel, gemini25FlashLiteModel, gemini3ProPreviewModel, geminiFlashLatestModel, geminiFlashLiteLatestModel, GPT4All, images, messages, ollama, mistral, claudeSonnet46Model, claudeOpus46Model, claudeHaiku45Model } from "utils/constants"
 
 export const openAIModels: Record<string, Model> = {
 	"ChatGPT-3.5 turbo": {
@@ -216,7 +216,7 @@ export const models: Record<string, Model> = {
 	"GPT Image 1": {
 		model: "gpt-image-1",
 		type: "openAI",
-		endpoint: "images",
+		endpoint: images,
 		url: "/images/generations",
 	},
 	// Mistral AI Models

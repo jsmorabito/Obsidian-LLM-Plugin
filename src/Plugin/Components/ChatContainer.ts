@@ -36,6 +36,7 @@ import {
 	geminiFlashLatestModel,
 	geminiFlashLiteLatestModel,
 	GPT4All,
+	images,
 	messages,
 	ollama,
 	mistral,
@@ -195,7 +196,7 @@ export class ChatContainer {
 			};
 			return params;
 		}
-		if (endpoint === "images") {
+		if (endpoint === images) {
 			const params: ImageParams = {
 				prompt: this.prompt,
 				messages: messagesForParams,
@@ -617,7 +618,7 @@ export class ChatContainer {
 		// Build context when the global feature flag is on OR when the user has
 		// explicitly added files via the + chip button (explicit intent always wins).
 		const hasExplicitFileContext = (contextSettings.selectedFiles?.length ?? 0) > 0;
-		if (modelEndpoint !== "images" && (this.plugin.settings.enableFileContext || hasExplicitFileContext)) {
+		if (modelEndpoint !== images && (this.plugin.settings.enableFileContext || hasExplicitFileContext)) {
 			try {
 				contextString = await this.contextBuilder.buildFormattedContext(
 					contextSettings,
@@ -636,7 +637,7 @@ export class ChatContainer {
 		}
 
 		// Active file context toggle (explicit user action via scan button)
-		if (this.useActiveFileContext && modelEndpoint !== "images") {
+		if (this.useActiveFileContext && modelEndpoint !== images) {
 			try {
 				const activeFile = this.plugin.app.workspace.getActiveFile();
 				if (activeFile) {
@@ -657,7 +658,7 @@ export class ChatContainer {
 
 		// For agent mode: prepend a hint that identifies the active/context file(s)
 		// so the model knows which file to act on when the user says "this page", etc.
-		if (this.supportsAgentMode(modelType) && modelEndpoint !== "images") {
+		if (this.supportsAgentMode(modelType) && modelEndpoint !== images) {
 			const activeFile = this.plugin.app.workspace.getActiveFile();
 			if (activeFile || this.pendingContextString) {
 				const activeHint = activeFile
@@ -680,7 +681,7 @@ export class ChatContainer {
 		const params = this.getParams(modelEndpoint, model, modelType);
 		try {
 			this.previewText = "";
-			if (modelEndpoint !== "images") {
+			if (modelEndpoint !== images) {
 				if (this.supportsAgentMode(modelType)) {
 					await this.runAgentMode(
 						params as ChatParams,
@@ -695,7 +696,7 @@ export class ChatContainer {
 				this.currentVaultContext = null;
 				this.pendingContextString = null;
 			}
-			if (modelEndpoint === "images") {
+			if (modelEndpoint === images) {
 				this.setDiv(false);
 				await openAIMessage(
 					params as ImageParams,
@@ -917,7 +918,7 @@ export class ChatContainer {
 		// ── File-based path (chatHistoryEnabled, chat only) ───────────────────
 		if (
 			this.plugin.settings.chatHistoryEnabled &&
-			modelEndpoint !== "images"
+			modelEndpoint !== images
 		) {
 			this.historyPushToFile(
 				params as ChatHistoryItem,
@@ -968,7 +969,7 @@ export class ChatContainer {
 				id: conversationId,
 			});
 		}
-		if (modelEndpoint === "images") {
+		if (modelEndpoint === images) {
 			this.plugin.history.push({
 				...(params as ImageHistoryItem),
 				modelName,
