@@ -3,8 +3,8 @@ import { Header } from "Plugin/Components/Header";
 import { HistoryContainer } from "Plugin/Components/HistoryContainer";
 import { SettingsContainer } from "Plugin/Components/SettingsContainer";
 import LLMPlugin from "main";
-import { setIcon } from "obsidian";
-import { getViewInfo, getSettingType, setView } from "utils/utils";
+import { Notice, setIcon } from "obsidian";
+import { getViewInfo, getSettingType, setView, setHistoryFilePath } from "utils/utils";
 import { models } from "utils/models";
 
 export class StatusBarButton {
@@ -110,11 +110,7 @@ export class StatusBarButton {
 			this.chatContainer,
 			this.header
 		);
-		settingsContainer.generateSettingsContainer(
-			settingsContainerDiv,
-			this.header,
-			() => this.chatContainer?.syncChips()
-		);
+		settingsContainer.generateSettingsContainer(settingsContainerDiv);
 
 		// Resize handle — same logic as FAB, but repositions after each drag
 		// so the popover stays anchored above the status bar.
@@ -199,6 +195,10 @@ export class StatusBarButton {
 			this.plugin.saveSettings();
 
 			this.popoverEl.style.display = "flex";
+
+			// Sync the model dropdown to reflect any default-model change made
+			// since the popover was first built (buildPopover runs once on load).
+			this.chatContainer?.syncModelDropdown();
 
 			// Refresh the active-file chip to whichever file is open now.
 			this.chatContainer?.refreshActiveFileChip();
@@ -287,6 +287,79 @@ export class StatusBarButton {
 		// Update the header title to match the loaded conversation.
 		const displayTitle = historyItem?.prompt || historyItem?.messages[0]?.content || "";
 		this.header?.setTitle(displayTitle);
+	}
+
+	/**
+	 * Open the chat popover with a file-based conversation pre-loaded.
+	 * Called by RecentChatsButton when chatHistoryEnabled is true.
+	 */
+	openAtHistoryFile(filePath: string) {
+		if (!this.chatContainer || !this.chatContainerDiv || !this.chatHistoryContainer || !this.header) return;
+
+		const settingType = getSettingType("floating-action-button");
+
+		// Show the popover if it's currently hidden
+		if (this.popoverEl?.style.display === "none") {
+			setView(this.plugin, "floating-action-button");
+			this.popoverEl.style.display = "flex";
+			this.chatContainer.refreshActiveFileChip();
+
+			requestAnimationFrame(() => {
+				if (!this.popoverEl) return;
+				const safeMax = Math.max(
+					360,
+					this.popoverEl.getBoundingClientRect().bottom - 36
+				);
+				if (this.popoverEl.offsetHeight > safeMax) {
+					this.popoverEl.style.height = `${safeMax}px`;
+					this.plugin.settings.fabViewHeight = safeMax;
+					this.plugin.saveSettings();
+				}
+				this.repositionPopover();
+			});
+		}
+
+		// Load the file-based conversation
+		this.plugin.chatHistory
+			.load(filePath)
+			.then(({ meta, messages }) => {
+				this.chatContainer!.resetChat();
+				this.chatContainer!.messageStore.setMessages(messages);
+				this.chatContainer!.generateIMLikeMessages(messages);
+
+				this.chatHistoryContainer!.hide();
+				this.chatContainerDiv!.show();
+				this.chatContainerDiv!.querySelector(".messages-div")?.scroll(0, 9999);
+
+				// Restore model settings from the file metadata
+				if (meta.model && models[meta.model]) {
+					const m = models[meta.model];
+					this.plugin.settings[settingType].model = meta.model;
+					this.plugin.settings[settingType].modelName = meta.model;
+					this.plugin.settings[settingType].modelType = m.type;
+					this.plugin.settings[settingType].modelEndpoint = m.endpoint;
+					this.plugin.settings[settingType].endpointURL = m.url;
+				}
+
+				// Track the open file so subsequent messages update it
+				setHistoryFilePath(this.plugin, "floating-action-button", filePath);
+				this.chatContainer!.currentHistoryFilePath = filePath;
+				this.plugin.saveSettings();
+
+				this.header!.setHeader(this.plugin.settings[settingType].modelName);
+				this.header!.resetHistoryButton();
+				this.header!.setTitle(meta.title ?? filePath);
+				this.header!.showTitle();
+			})
+			.catch((e) => {
+				console.error("[StatusBarButton] Failed to load chat file:", e);
+				new Notice("Failed to load conversation.");
+			});
+	}
+
+	/** Delegates to ChatContainer so the empty state re-renders with the latest settings. */
+	refreshEmptyState() {
+		this.chatContainer?.refreshEmptyState();
 	}
 
 	remove() {

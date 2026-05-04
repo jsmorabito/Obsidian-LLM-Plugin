@@ -38,6 +38,12 @@ export class RecentChatsButton {
 		if (!this.popoverEl) return;
 		this.popoverEl.empty();
 
+		// Branch: file-based history vs legacy array
+		if (this.plugin.settings.chatHistoryEnabled) {
+			this.renderFileHistory();
+			return;
+		}
+
 		const history = this.plugin.settings.promptHistory;
 
 		// Search input
@@ -108,6 +114,85 @@ export class RecentChatsButton {
 		// Prevent popover from closing when typing in the search input
 		searchInput.addEventListener("click", (e) => e.stopPropagation());
 
+		requestAnimationFrame(() => searchInput.focus());
+	}
+
+	/**
+	 * Render the recent-chats popover using file-based history.
+	 * Called when chatHistoryEnabled is true.
+	 */
+	private renderFileHistory() {
+		if (!this.popoverEl) return;
+
+		// Search input
+		const searchWrapper = this.popoverEl.createDiv("llm-recent-chats-search-wrapper");
+		const searchInput = searchWrapper.createEl("input", {
+			attr: {
+				type: "text",
+				placeholder: "Search chats…",
+				class: "llm-recent-chats-search",
+			},
+		}) as HTMLInputElement;
+
+		const listEl = this.popoverEl.createDiv("llm-recent-chats-list");
+
+		// Show a loading state while we read the vault
+		const loading = listEl.createDiv("llm-recent-chats-empty");
+		loading.setText("Loading…");
+
+		this.plugin.chatHistory.list().then((files) => {
+			const renderList = (query: string) => {
+				listEl.empty();
+
+				if (!files.length) {
+					listEl.createDiv("llm-recent-chats-empty").setText("No chat history yet.");
+					return;
+				}
+
+				const filtered = query
+					? files.filter((file) => {
+							const title =
+								this.plugin.app.metadataCache.getFileCache(file)?.frontmatter?.title ??
+								file.basename;
+							return this.fuzzyMatch(query.toLowerCase(), title.toLowerCase());
+					  })
+					: files;
+
+				if (!filtered.length) {
+					listEl.createDiv("llm-recent-chats-empty").setText("No matches found.");
+					return;
+				}
+
+				filtered.forEach((file) => {
+					const cache = this.plugin.app.metadataCache.getFileCache(file);
+					const title = cache?.frontmatter?.title ?? file.basename;
+					const model = cache?.frontmatter?.model as string | undefined;
+
+					const row = listEl.createDiv("llm-recent-chats-item");
+
+					const textEl = row.createDiv("llm-recent-chats-item-text");
+					textEl.setText(title);
+
+					if (model) {
+						row.createDiv("llm-recent-chats-item-model").setText(model);
+					}
+
+					row.addEventListener("click", (e) => {
+						e.stopPropagation();
+						this.hidePopover();
+						this.statusBarButton.openAtHistoryFile(file.path);
+					});
+				});
+			};
+
+			renderList("");
+			searchInput.addEventListener("input", () => renderList(searchInput.value));
+		}).catch(() => {
+			listEl.empty();
+			listEl.createDiv("llm-recent-chats-empty").setText("Failed to load chat history.");
+		});
+
+		searchInput.addEventListener("click", (e) => e.stopPropagation());
 		requestAnimationFrame(() => searchInput.focus());
 	}
 

@@ -9,6 +9,7 @@ import {
 	claudeValidationModel,
 	gemini,
 	gemini2FlashStableModel,
+	images,
 	ollama,
 } from "utils/constants";
 import { query as claudeCodeQuery } from "@anthropic-ai/claude-agent-sdk";
@@ -421,7 +422,7 @@ export async function openAIMessage(
 		return stream;
 	}
 
-	if (endpointType === "images") {
+	if (endpointType === images) {
 		const {
 			prompt,
 			model,
@@ -482,6 +483,7 @@ export function getViewInfo(
 			modelName: plugin.settings.modalSettings.modelName,
 			modelType: plugin.settings.modalSettings.modelType,
 			historyIndex: plugin.settings.modalSettings.historyIndex,
+			historyFilePath: plugin.settings.modalSettings.historyFilePath ?? null,
 			modelEndpoint: plugin.settings.modalSettings.modelEndpoint,
 			endpointURL: plugin.settings.modalSettings.endpointURL,
 			contextSettings: plugin.settings.modalSettings.contextSettings,
@@ -497,6 +499,7 @@ export function getViewInfo(
 			modelName: plugin.settings.widgetSettings.modelName,
 			modelType: plugin.settings.widgetSettings.modelType,
 			historyIndex: plugin.settings.widgetSettings.historyIndex,
+			historyFilePath: plugin.settings.widgetSettings.historyFilePath ?? null,
 			modelEndpoint: plugin.settings.widgetSettings.modelEndpoint,
 			endpointURL: plugin.settings.widgetSettings.endpointURL,
 			contextSettings: plugin.settings.widgetSettings.contextSettings,
@@ -512,6 +515,7 @@ export function getViewInfo(
 			modelName: plugin.settings.fabSettings.modelName,
 			modelType: plugin.settings.fabSettings.modelType,
 			historyIndex: plugin.settings.fabSettings.historyIndex,
+			historyFilePath: plugin.settings.fabSettings.historyFilePath ?? null,
 			modelEndpoint: plugin.settings.fabSettings.modelEndpoint,
 			endpointURL: plugin.settings.fabSettings.endpointURL,
 			contextSettings: plugin.settings.fabSettings.contextSettings,
@@ -531,6 +535,7 @@ export function getViewInfo(
 		modelName: "",
 		modelType: "",
 		historyIndex: -1,
+		historyFilePath: null,
 		modelEndpoint: "",
 		endpointURL: "",
 		contextSettings: {
@@ -543,12 +548,29 @@ export function getViewInfo(
 	};
 }
 
+export function setHistoryFilePath(
+	plugin: LLMPlugin,
+	viewType: ViewType,
+	filePath: string | null
+) {
+	const settings: Record<string, string> = {
+		modal: "modalSettings",
+		widget: "widgetSettings",
+		"floating-action-button": "fabSettings",
+	};
+	const settingType = settings[viewType] as
+		| "modalSettings"
+		| "widgetSettings"
+		| "fabSettings";
+	plugin.settings[settingType].historyFilePath = filePath;
+	plugin.saveSettings();
+}
+
 export function changeDefaultModel(model: string, plugin: LLMPlugin) {
 	plugin.settings.defaultModel = model;
-	// Question -> why do we not update the FAB model here?
 	const modelName = modelNames[model];
-	// Modal settings
 
+	// Modal settings
 	plugin.settings.modalSettings.model = model;
 	plugin.settings.modalSettings.modelName = modelName;
 	plugin.settings.modalSettings.modelType = models[modelName].type;
@@ -561,6 +583,13 @@ export function changeDefaultModel(model: string, plugin: LLMPlugin) {
 	plugin.settings.widgetSettings.modelType = models[modelName].type;
 	plugin.settings.widgetSettings.endpointURL = models[modelName].url;
 	plugin.settings.widgetSettings.modelEndpoint = models[modelName].endpoint;
+
+	// FAB settings
+	plugin.settings.fabSettings.model = model;
+	plugin.settings.fabSettings.modelName = modelName;
+	plugin.settings.fabSettings.modelType = models[modelName].type;
+	plugin.settings.fabSettings.endpointURL = models[modelName].url;
+	plugin.settings.fabSettings.modelEndpoint = models[modelName].endpoint;
 
 	plugin.saveSettings();
 }

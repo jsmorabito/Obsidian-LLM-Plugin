@@ -24,13 +24,14 @@ This is an Obsidian plugin that provides LLM chat interfaces with support for Op
 3. Registers commands and views
 4. Initializes MessageStore, History, Assistants, and FAB components
 
-### View Architecture (Three UI Implementations)
+### View Architecture (Four UI Implementations)
 
-The plugin provides three ways to access the chat interface, all using the same underlying components:
+The plugin provides four ways to access the chat interface, all using the same underlying components:
 
 - **Modal** (`src/Plugin/Modal/ChatModal2.ts`) - Popup dialog
 - **Widget** (`src/Plugin/Widget/Widget.ts`) - Sidebar tab view
 - **FAB** (`src/Plugin/FAB/FAB.ts`) - Floating Action Button with expandable chat
+- **StatusBarButton** (`src/Plugin/StatusBar/StatusBarButton.ts`) - "Ask AI" button in the status bar that opens a popover chat. Uses `viewType: "floating-action-button"` and shares `fabSettings` with the FAB. Its popover is built once on `generate()` (not per-open), so call `chatContainer.syncModelDropdown()` whenever the popover is shown to keep the model dropdown in sync with settings.
 
 Each view composes these shared components from `src/Plugin/Components/`:
 - `Header.ts` - Tab navigation (Chat/History/Settings/Assistants)
@@ -73,9 +74,20 @@ Provider SDKs used:
 ### Key Files
 
 - `src/Types/types.ts` - TypeScript interfaces (ChatParams, ImageParams, etc.)
-- `src/utils/constants.ts` - Provider/model/endpoint constants
+- `src/utils/constants.ts` - Provider/model/endpoint constants (includes `images`, `chat`, `messages`, `assistant`, `claudeCodeEndpoint`, etc.)
 - `src/utils/models.ts` - Model configuration definitions
 - `src/utils/utils.ts` - API validation and helper functions
+
+### Constants Convention
+
+All endpoint type strings live in `src/utils/constants.ts` and must be imported as constants rather than compared against raw string literals. The full set of endpoint constants is: `chat`, `messages`, `images`, `claudeCodeEndpoint`. Provider type constants are: `openAI`, `claude`, `claudeCode`, `gemini`, `mistral`, `ollama`, `GPT4All`.
+
+### CSS / Styling Convention
+
+- Always use Obsidian CSS variables (`--size-4-2`, `--font-ui-small`, `--text-muted`, `--interactive-accent`, etc.) instead of hardcoded px/em/color values.
+- Use `--icon-xs` / `--icon-s` for icon sizes rather than raw pixel values.
+- Component-specific styles belong in `styles.css` as named classes — never use inline `element.style.*` assignments in TypeScript (use `.addClass()` with a CSS class instead).
+- `FileSelector.ts` uses the `.llm-file-selector-*` family of classes defined in `styles.css`.
 
 ## Build Configuration
 

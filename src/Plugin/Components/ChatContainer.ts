@@ -36,6 +36,7 @@ import {
 	geminiFlashLatestModel,
 	geminiFlashLiteLatestModel,
 	GPT4All,
+	images,
 	messages,
 	ollama,
 	mistral,
@@ -56,9 +57,12 @@ import {
 	geminiMessage,
 	openAIMessage,
 	setHistoryIndex,
+	setHistoryFilePath,
 } from "utils/utils";
 import { AgentLoop, AgentCallbacks } from "services/AgentLoop";
 import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
 import { models, modelNames } from "utils/models";
 import { Header } from "./Header";
 import { MessageStore } from "./MessageStore";
@@ -95,11 +99,18 @@ export class ChatContainer {
 	pendingContextString: string | null = null; // Context string to inject into API call (not shown in UI)
 	claudeCodeSessionId: string | null = null;
 	useActiveFileContext: boolean = false;
+	/** Resolves when the most recent generateIMLikeMessages render is complete. */
+	private renderingPromise: Promise<void> = Promise.resolve();
+	/** Tracks the file path for the currently active chat file (file-based history only). Cleared on new chat. */
+	currentHistoryFilePath: string | null = null;
 	/** Optional callback set by the FAB header to sync the title display. */
 	headerTitleCallback: ((title: string) => void) | null = null;
 	chipContainer: HTMLElement | null = null;
+	addFilesButton: ButtonComponent | null = null;
 	scanButton: ButtonComponent | null = null;
 	activeFileForChip: { name: string } | null = null;
+	/** Stored so StatusBarButton (and FAB) can re-sync the displayed model after settings change. */
+	private modelDropdown: DropdownComponent | null = null;
 
 	constructor(
 		private plugin: LLMPlugin,
@@ -141,7 +152,10 @@ export class ChatContainer {
 		// Each view has its own store, so the messages passed here are always
 		// the right ones for this view — no cross-view filtering needed.
 		this.resetChat();
-		this.generateIMLikeMessages(messages);
+		// Store the promise so handleGenerateClick can await it before appending
+		// the streaming/thinking div. Without this, setDiv() races with the async
+		// message render and the thinking animation lands above the user message.
+		this.renderingPromise = this.generateIMLikeMessages(messages);
 	}
 
 	getMessages() {
@@ -182,7 +196,7 @@ export class ChatContainer {
 			};
 			return params;
 		}
-		if (endpoint === "images") {
+		if (endpoint === images) {
 			const params: ImageParams = {
 				prompt: this.prompt,
 				messages: messagesForParams,
@@ -604,7 +618,7 @@ export class ChatContainer {
 		// Build context when the global feature flag is on OR when the user has
 		// explicitly added files via the + chip button (explicit intent always wins).
 		const hasExplicitFileContext = (contextSettings.selectedFiles?.length ?? 0) > 0;
-		if (modelEndpoint !== "images" && (this.plugin.settings.enableFileContext || hasExplicitFileContext)) {
+		if (modelEndpoint !== images && (this.plugin.settings.enableFileContext || hasExplicitFileContext)) {
 			try {
 				contextString = await this.contextBuilder.buildFormattedContext(
 					contextSettings,
@@ -623,7 +637,7 @@ export class ChatContainer {
 		}
 
 		// Active file context toggle (explicit user action via scan button)
-		if (this.useActiveFileContext && modelEndpoint !== "images") {
+		if (this.useActiveFileContext && modelEndpoint !== images) {
 			try {
 				const activeFile = this.plugin.app.workspace.getActiveFile();
 				if (activeFile) {
@@ -644,7 +658,7 @@ export class ChatContainer {
 
 		// For agent mode: prepend a hint that identifies the active/context file(s)
 		// so the model knows which file to act on when the user says "this page", etc.
-		if (this.supportsAgentMode(modelType) && modelEndpoint !== "images") {
+		if (this.supportsAgentMode(modelType) && modelEndpoint !== images) {
 			const activeFile = this.plugin.app.workspace.getActiveFile();
 			if (activeFile || this.pendingContextString) {
 				const activeHint = activeFile
@@ -660,10 +674,14 @@ export class ChatContainer {
 
 		const userMessage = { role: "user" as const, content: this.prompt };
 		this.messageStore.addMessage(userMessage);
+		// Wait for the async DOM render triggered by addMessage to complete before
+		// calling setDiv/showThinkingAnimation — otherwise the thinking animation
+		// is appended before the user message and appears at the top of the chat.
+		await this.renderingPromise;
 		const params = this.getParams(modelEndpoint, model, modelType);
 		try {
 			this.previewText = "";
-			if (modelEndpoint !== "images") {
+			if (modelEndpoint !== images) {
 				if (this.supportsAgentMode(modelType)) {
 					await this.runAgentMode(
 						params as ChatParams,
@@ -678,7 +696,7 @@ export class ChatContainer {
 				this.currentVaultContext = null;
 				this.pendingContextString = null;
 			}
-			if (modelEndpoint === "images") {
+			if (modelEndpoint === images) {
 				this.setDiv(false);
 				await openAIMessage(
 					params as ImageParams,
@@ -894,8 +912,25 @@ export class ChatContainer {
 	}
 
 	historyPush(params: HistoryItem, vaultContext?: any) {
-		const { modelName, historyIndex, modelEndpoint } =
+		const { modelName, historyIndex, historyFilePath, modelEndpoint } =
 			getViewInfo(this.plugin, this.viewType);
+
+		// ── File-based path (chatHistoryEnabled, chat only) ───────────────────
+		if (
+			this.plugin.settings.chatHistoryEnabled &&
+			modelEndpoint !== images
+		) {
+			this.historyPushToFile(
+				params as ChatHistoryItem,
+				vaultContext,
+				historyFilePath
+			).catch((e) =>
+				console.error("[ChatContainer] Failed to save chat file:", e)
+			);
+			return;
+		}
+
+		// ── Legacy array-based path ───────────────────────────────────────────
 		if (historyIndex > -1) {
 			this.plugin.history.overwriteHistory(
 				this.getMessages(),
@@ -934,7 +969,7 @@ export class ChatContainer {
 				id: conversationId,
 			});
 		}
-		if (modelEndpoint === "images") {
+		if (modelEndpoint === images) {
 			this.plugin.history.push({
 				...(params as ImageHistoryItem),
 				modelName,
@@ -945,6 +980,152 @@ export class ChatContainer {
 		setHistoryIndex(this.plugin, this.viewType, length);
 		this.plugin.saveSettings();
 		this.prompt = "";
+	}
+
+	/** File-based save path — called when chatHistoryEnabled is true. */
+	private async historyPushToFile(
+		params: ChatHistoryItem,
+		vaultContext: any,
+		_historyFilePath: string | null  // kept for signature compatibility; instance var used instead
+	): Promise<void> {
+		const messages = this.getMessages();
+
+		if (this.currentHistoryFilePath) {
+			// ── Update existing file ──────────────────────────────────────
+			await this.plugin.chatHistory.save(
+				this.currentHistoryFilePath,
+				"", // title unused on update
+				messages,
+				params,
+				vaultContext
+			);
+			return;
+		}
+
+		// ── New conversation ──────────────────────────────────────────────
+		const conversationId = crypto.randomUUID();
+		this.registry.set(conversationId, this.messageStore);
+
+		// Show the first user message in the header immediately while the
+		// title is being generated in the background.
+		if (this.headerTitleCallback) {
+			const firstUser = messages.find((m) => m.role === "user");
+			if (firstUser) this.headerTitleCallback(firstUser.content);
+		}
+
+		// Generate a short title, falling back to word-truncation on failure.
+		const title = await this.plugin.chatHistory.generateTitle(
+			messages,
+			() => this.generateConversationTitle(messages, params)
+		);
+
+		// Update header with the real generated title.
+		if (this.headerTitleCallback) {
+			this.headerTitleCallback(title);
+		}
+
+		const filePath = await this.plugin.chatHistory.save(
+			null,
+			title,
+			messages,
+			params,
+			vaultContext
+		);
+
+		this.currentHistoryFilePath = filePath;
+		setHistoryFilePath(this.plugin, this.viewType, filePath);
+		this.prompt = "";
+	}
+
+	/**
+	 * Ask the active provider to produce a short conversation title.
+	 * Throws on failure so ChatHistory.generateTitle can fall back.
+	 */
+	private async generateConversationTitle(
+		messages: Message[],
+		params: ChatHistoryItem
+	): Promise<string> {
+		const { model, modelType } = getViewInfo(this.plugin, this.viewType);
+
+		const titleRequest: Array<{ role: "user" | "assistant"; content: string }> =
+			[
+				...messages
+					.filter((m) => m.role !== "system")
+					.slice(0, 4)
+					.map((m) => ({
+						role: m.role as "user" | "assistant",
+						content: m.content,
+					})),
+				{
+					role: "user" as const,
+					content:
+						"Generate a very short title for this conversation in 5 words or fewer. Output only the title — no punctuation, no quotes, no explanation.",
+				},
+			];
+
+		// ── OpenAI / Mistral / Ollama (all OpenAI-compatible) ─────────────
+		if (
+			modelType === openAI ||
+			modelType === mistral ||
+			modelType === ollama
+		) {
+			const apiKey =
+				modelType === openAI
+					? this.plugin.settings.openAIAPIKey
+					: modelType === mistral
+					? this.plugin.settings.mistralAPIKey
+					: "ollama";
+			const baseURL =
+				modelType === mistral
+					? "https://api.mistral.ai/v1"
+					: modelType === ollama
+					? `${this.plugin.settings.ollamaHost}/v1`
+					: undefined;
+
+			const client = new OpenAI({
+				apiKey,
+				baseURL,
+				dangerouslyAllowBrowser: true,
+			});
+			const resp = await client.chat.completions.create({
+				model,
+				messages: titleRequest,
+				max_tokens: 20,
+				temperature: 0.3,
+			});
+			return resp.choices[0]?.message?.content?.trim() ?? "";
+		}
+
+		// ── Claude ────────────────────────────────────────────────────────
+		if (modelType === claude) {
+			const client = new Anthropic({
+				apiKey: this.plugin.settings.claudeAPIKey,
+				dangerouslyAllowBrowser: true,
+			});
+			const resp = await client.messages.create({
+				model,
+				max_tokens: 20,
+				messages: titleRequest,
+			});
+			const block = resp.content[0];
+			return block.type === "text" ? block.text.trim() : "";
+		}
+
+		// ── Gemini ────────────────────────────────────────────────────────
+		if (modelType === gemini) {
+			const client = new GoogleGenAI({
+				apiKey: this.plugin.settings.geminiAPIKey,
+			});
+			const contents = titleRequest.map((m) => ({
+				role: m.role === "user" ? "user" : "model",
+				parts: [{ text: m.content }],
+			}));
+			const resp = await client.models.generateContent({ model, contents });
+			return resp.text?.trim() ?? "";
+		}
+
+		// GPT4All — not worth a separate HTTP call; let the fallback handle it.
+		throw new Error(`Title generation not supported for provider: ${modelType}`);
 	}
 
 	auto_height(elem: TextAreaComponent, parentElement: Element) {
@@ -984,6 +1165,12 @@ export class ChatContainer {
 		const contextSettings = this.plugin.settings[settingType].contextSettings;
 
 		this.chipContainer.empty();
+
+		// When file context is disabled, show nothing
+		if (!this.plugin.settings.enableFileContext) {
+			this.chipContainer.style.display = "none";
+			return;
+		}
 
 		const hasActiveFile = this.useActiveFileContext && this.activeFileForChip;
 		const hasAdditional = contextSettings.selectedFiles.length > 0;
@@ -1076,7 +1263,8 @@ export class ChatContainer {
 		// Model dropdown
 		const settingType = getSettingType(this.viewType);
 		const viewSettings = this.plugin.settings[settingType];
-		const modelDropdown = new DropdownComponent(toolbarSection);
+		this.modelDropdown = new DropdownComponent(toolbarSection);
+		const modelDropdown = this.modelDropdown;
 		modelDropdown.selectEl.addClass("llm-model-select");
 		const { openAIAPIKey, claudeAPIKey, geminiAPIKey, mistralAPIKey } = this.plugin.settings;
 		for (const modelDisplayName of Object.keys(models)) {
@@ -1120,7 +1308,8 @@ export class ChatContainer {
 		toolbarRight.addClass("llm-input-toolbar-right");
 
 		// Add files / file-picker button
-		const addFilesButton = new ButtonComponent(toolbarRight);
+		this.addFilesButton = new ButtonComponent(toolbarRight);
+		const addFilesButton = this.addFilesButton;
 		addFilesButton.setIcon("plus");
 		addFilesButton.setTooltip("Add files as context");
 		addFilesButton.buttonEl.addClass("llm-scan-button");
@@ -1169,6 +1358,9 @@ export class ChatContainer {
 				}
 			});
 		}
+
+		// Sync file-context button visibility based on the current setting
+		this.syncFileContextButtons();
 
 		// Send button
 		const sendButton = new ButtonComponent(toolbarRight);
@@ -1273,6 +1465,11 @@ export class ChatContainer {
 		const freshStore = new MessageStore();
 		this.switchToStore(freshStore);
 		this.claudeCodeSessionId = null;
+		// Clear the active chat file so the next conversation creates a new file.
+		this.currentHistoryFilePath = null;
+		if (this.plugin.settings.chatHistoryEnabled) {
+			setHistoryFilePath(this.plugin, this.viewType, null);
+		}
 	}
 
 	setDiv(streaming: boolean) {
@@ -1550,6 +1747,36 @@ export class ChatContainer {
 		}
 	}
 
+	/**
+	 * If the view is currently showing the empty state (no messages), re-renders
+	 * it so changes to display settings (e.g. avatar) are reflected immediately.
+	 */
+	refreshEmptyState() {
+		if (this.getMessages().length === 0) {
+			this.historyMessages.empty();
+			this.displayNoChatView(this.historyMessages);
+		}
+	}
+
+	/**
+	 * Re-reads the current default model from settings and updates the model
+	 * dropdown to match. Call this whenever a popover is shown after settings
+	 * may have changed (e.g. StatusBarButton.togglePopover, FAB toggle).
+	 */
+	syncModelDropdown() {
+		if (!this.modelDropdown) return;
+		const settingType = getSettingType(this.viewType);
+		this.modelDropdown.setValue(this.plugin.settings[settingType].model);
+		this.syncFileContextButtons();
+	}
+
+	/** Show or hide the file-context buttons based on the enableFileContext setting. */
+	syncFileContextButtons() {
+		const enabled = this.plugin.settings.enableFileContext;
+		this.addFilesButton?.buttonEl.toggleClass("llm-hidden", !enabled);
+		this.scanButton?.buttonEl.toggleClass("llm-hidden", !enabled);
+	}
+
 	newChat() {
 		this.historyMessages.empty();
 		this.claudeCodeSessionId = null;
@@ -1562,7 +1789,10 @@ export class ChatContainer {
 		this.scanButton?.buttonEl.removeClass("is-active");
 
 		const settingType = getSettingType(this.viewType);
-		if (this.plugin.settings[settingType].contextSettings.includeActiveFile) {
+		if (
+			this.plugin.settings.enableFileContext &&
+			this.plugin.settings[settingType].contextSettings.includeActiveFile
+		) {
 			const activeFile = this.plugin.app.workspace.getActiveFile();
 			if (activeFile) {
 				this.useActiveFileContext = true;

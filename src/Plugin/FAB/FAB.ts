@@ -148,11 +148,7 @@ export class FAB {
 			chatContainer,
 			header
 		);
-		settingsContainer.generateSettingsContainer(
-			settingsContainerDiv,
-			header,
-			() => chatContainer.syncChips()
-		);
+		settingsContainer.generateSettingsContainer(settingsContainerDiv);
 
 		let button = new ButtonComponent(fabContainer);
 		button
@@ -182,6 +178,11 @@ export class FAB {
 		document.body
 			.querySelector(ROOT_WORKSPACE_CLASS)
 			?.insertAdjacentElement("afterbegin", fabContainer);
+	}
+
+	/** Delegates to ChatContainer so the empty state re-renders with the latest settings. */
+	refreshEmptyState() {
+		this.chatContainer?.refreshEmptyState();
 	}
 
 	removeFab() {

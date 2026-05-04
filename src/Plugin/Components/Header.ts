@@ -1,9 +1,10 @@
 import LLMPlugin from "main";
 import { ButtonComponent, Menu } from "obsidian";
 import { ChatContainer } from "./ChatContainer";
+import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
 import { HistoryContainer } from "./HistoryContainer";
 import { ViewType } from "Types/types";
-import { getViewInfo, setHistoryIndex } from "utils/utils";
+import { getViewInfo, setHistoryIndex, setHistoryFilePath } from "utils/utils";
 import { SettingsContainer } from "./SettingsContainer";
 import { DEFAULT_SETTINGS } from "main";
 
@@ -155,7 +156,9 @@ export class Header {
 					.setIcon("panel-right")
 					.onClick(() => {
 						const historyIndex = this.plugin.settings.fabSettings.historyIndex;
+						const historyFilePath = this.plugin.settings.fabSettings.historyFilePath;
 						this.plugin.pendingWidgetHistoryIndex = historyIndex;
+						this.plugin.pendingWidgetFilePath = historyFilePath;
 						this.plugin.activateSidebar();
 						closeCallback?.();
 					});
@@ -166,7 +169,9 @@ export class Header {
 					.setIcon("layout-dashboard")
 					.onClick(() => {
 						const historyIndex = this.plugin.settings.fabSettings.historyIndex;
+						const historyFilePath = this.plugin.settings.fabSettings.historyFilePath;
 						this.plugin.pendingWidgetHistoryIndex = historyIndex;
+						this.plugin.pendingWidgetFilePath = historyFilePath;
 						this.plugin.activateTab();
 						closeCallback?.();
 					});
@@ -178,24 +183,40 @@ export class Header {
 				item.setTitle("Delete chat")
 					.setIcon("trash")
 					.onClick(() => {
-						const historyIndex = this.plugin.settings.fabSettings.historyIndex;
-						if (historyIndex >= 0) {
-							this.plugin.settings.promptHistory =
-								this.plugin.settings.promptHistory.filter(
-									(_, idx) => idx !== historyIndex
-								);
-							this.plugin.settings.fabSettings.historyIndex =
-								DEFAULT_SETTINGS.fabSettings.historyIndex;
-							this.plugin.settings.currentIndex = -1;
-							this.plugin.saveSettings();
-						}
-						this.setTitle("");
-						this.showTitle();
-						chatContainerDiv.show();
-						settingsContainerDiv.hide();
-						chatHistoryContainerDiv.hide();
-						chatContainer.newChat();
-						chatContainer.resetMessages();
+						new ConfirmDeleteModal(this.plugin.app, () => {
+							if (this.plugin.settings.chatHistoryEnabled) {
+								// File-based history: delete the markdown file from the vault
+								const filePath = this.plugin.settings.fabSettings.historyFilePath;
+								if (filePath) {
+									this.plugin.chatHistory
+										.delete(filePath)
+										.catch((e) =>
+											console.error("[Header] Failed to delete chat file:", e)
+										);
+									setHistoryFilePath(this.plugin, this.viewType, null);
+								}
+							} else {
+								// Legacy array-based history: remove from promptHistory array
+								const historyIndex = this.plugin.settings.fabSettings.historyIndex;
+								if (historyIndex >= 0) {
+									this.plugin.settings.promptHistory =
+										this.plugin.settings.promptHistory.filter(
+											(_, idx) => idx !== historyIndex
+										);
+									this.plugin.settings.fabSettings.historyIndex =
+										DEFAULT_SETTINGS.fabSettings.historyIndex;
+									this.plugin.settings.currentIndex = -1;
+									this.plugin.saveSettings();
+								}
+							}
+							this.setTitle("");
+							this.showTitle();
+							chatContainerDiv.show();
+							settingsContainerDiv.hide();
+							chatHistoryContainerDiv.hide();
+							chatContainer.newChat();
+							chatContainer.resetMessages();
+						}).open();
 					});
 			});
 
@@ -234,10 +255,7 @@ export class Header {
 		this.settingsButton.setTooltip("Chat settings");
 		this.settingsButton.onClick(() => {
 			settingsContainer.resetSettings(settingsContainerDiv);
-			settingsContainer.generateSettingsContainer(
-				settingsContainerDiv,
-				this
-			);
+			settingsContainer.generateSettingsContainer(settingsContainerDiv);
 			this.clickHandler(this.settingsButton!, [this.chatHistoryButton!]);
 			if (!settingsContainerDiv.isShown()) {
 				settingsContainerDiv.show();
@@ -315,10 +333,7 @@ export class Header {
 		this.settingsButton.setTooltip("Chat settings");
 		this.settingsButton.onClick(() => {
 			settingsContainer.resetSettings(settingsContainerDiv);
-			settingsContainer.generateSettingsContainer(
-				settingsContainerDiv,
-				this
-			);
+			settingsContainer.generateSettingsContainer(settingsContainerDiv);
 			this.clickHandler(this.settingsButton!, [
 				this.chatHistoryButton!,
 			]);
@@ -342,6 +357,7 @@ export class Header {
 				this.chatHistoryButton!,
 			]);
 			this.setHeader(modelName);
+			this.setTitle("");
 			this.showTitle();
 			chatContainerDiv.show();
 			settingsContainerDiv.hide();

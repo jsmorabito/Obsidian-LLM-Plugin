@@ -8,6 +8,7 @@ import {
 } from "./Types/types";
 
 import { History } from "History/HistoryHandler";
+import { ChatHistory } from "services/ChatHistory";
 import { FAB } from "Plugin/FAB/FAB";
 import { StatusBarButton } from "Plugin/StatusBar/StatusBarButton";
 import { RecentChatsButton } from "Plugin/StatusBar/RecentChatsButton";
@@ -53,6 +54,9 @@ export interface LLMPluginSettings {
 	widgetSettings: ViewSettings;
 	fabSettings: ViewSettings;
 	promptHistory: HistoryItem[];
+	chatHistoryEnabled: boolean;
+	chatHistoryMigrated: boolean;
+	chatHistoryFolder: string;
 	claudeAPIKey: string;
 	claudeCodeOAuthToken: string;
 	linearWorkspaces: Array<{ name: string; apiKey: string }>;
@@ -78,6 +82,7 @@ const defaultSettings = {
 	modelEndpoint: chat,
 	endpointURL: "/chat/completions",
 	historyIndex: -1,
+	historyFilePath: null as string | null,
 	imageSettings: {
 		numberOfImages: 1,
 		response_format: "url" as ResponseFormat,
@@ -121,6 +126,9 @@ export const DEFAULT_SETTINGS: LLMPluginSettings = {
 		...defaultSettings,
 	},
 	promptHistory: [],
+	chatHistoryEnabled: false,
+	chatHistoryMigrated: false,
+	chatHistoryFolder: "LLM Chats",
 	openAIAPIKey: "",
 	claudeAPIKey: "",
 	mistralAPIKey: "",
@@ -144,6 +152,7 @@ export default class LLMPlugin extends Plugin {
 	os: OperatingSystem;
 	settings: LLMPluginSettings;
 	history: History;
+	chatHistory: ChatHistory;
 	fab: FAB;
 	conversationRegistry: ConversationRegistry;
 	ribbonIconEl: HTMLElement | null = null;
@@ -151,6 +160,8 @@ export default class LLMPlugin extends Plugin {
 	recentChatsButton: RecentChatsButton;
 	/** Transient — set before opening the widget so it can auto-load the right conversation. */
 	pendingWidgetHistoryIndex: number = -1;
+	/** Transient — set before opening the widget to auto-load a chat file by vault path. */
+	pendingWidgetFilePath: string | null = null;
 
 	async onload() {
 		this.fileSystem = Platform.isDesktop
@@ -187,6 +198,83 @@ export default class LLMPlugin extends Plugin {
 			}, 500);
 		}
 		this.history = new History(this);
+		this.chatHistory = new ChatHistory(this);
+		this.registerChatFileViewAction();
+	}
+
+	/**
+	 * Register a workspace event that adds a "Open in chat widget" action button
+	 * to the view-actions area whenever a chat history file is the active note.
+	 *
+	 * Uses `active-leaf-change` (fires on every tab switch, not just first open)
+	 * and reads the file directly from the leaf view to avoid metadata-cache timing issues.
+	 */
+	private registerChatFileViewAction() {
+		let currentActionEl: HTMLElement | null = null;
+
+		const tryAttach = (leaf: WorkspaceLeaf | null) => {
+			currentActionEl?.remove();
+			currentActionEl = null;
+
+			if (!leaf) return;
+
+			// MarkdownView exposes `.file`; other view types do not
+			const view = leaf.view as any;
+			const file = view?.file;
+			if (!file || file.extension !== "md") return;
+
+			// Only chat history files (folder check is sufficient — the folder is dedicated)
+			const chatFolder = this.settings.chatHistoryFolder || "LLM Chats";
+			if (!file.path.startsWith(chatFolder + "/")) return;
+
+			if (typeof view.addAction !== "function") return;
+
+			const filePath: string = file.path;
+			currentActionEl = view.addAction(
+				"bot-message-square",
+				"Open in chat widget",
+				async () => {
+					await this.openChatFileInWidget(filePath);
+				}
+			);
+		};
+
+		this.registerEvent(
+			this.app.workspace.on("active-leaf-change", (leaf) => {
+				tryAttach(leaf);
+			})
+		);
+	}
+
+	/**
+	 * Re-renders the empty state in every open chat view so display setting
+	 * changes (e.g. avatar) are visible immediately without a plugin reload.
+	 */
+	refreshAllEmptyStates() {
+		this.fab.refreshEmptyState();
+		this.statusBarButton.refreshEmptyState();
+		this.app.workspace.getLeavesOfType(TAB_VIEW_TYPE).forEach((leaf: WorkspaceLeaf) => {
+			(leaf.view as WidgetView).refreshEmptyState();
+		});
+	}
+
+	/** Open a chat markdown file in the widget tab, creating the widget if needed. */
+	async openChatFileInWidget(filePath: string): Promise<void> {
+		const { workspace } = this.app;
+		const tabs = workspace.getLeavesOfType(TAB_VIEW_TYPE);
+
+		if (tabs.length > 0) {
+			// Widget already open — load directly
+			const leaf = tabs[0];
+			workspace.revealLeaf(leaf);
+			await (leaf.view as WidgetView).loadChatFile(filePath);
+		} else {
+			// Widget not open — set pending path and open a new tab; onOpen() will load it
+			this.pendingWidgetFilePath = filePath;
+			const leaf = workspace.getLeaf("tab");
+			await leaf.setViewState({ type: TAB_VIEW_TYPE, active: true });
+			workspace.revealLeaf(leaf);
+		}
 	}
 
 	onunload() {
@@ -245,6 +333,7 @@ export default class LLMPlugin extends Plugin {
 	async activateTab() {
 		const { workspace } = this.app;
 		const pendingIndex = this.pendingWidgetHistoryIndex;
+		const pendingFilePath = this.pendingWidgetFilePath;
 
 		let tab: WorkspaceLeaf | null = null;
 		const tabs = workspace.getLeavesOfType(TAB_VIEW_TYPE);
@@ -252,14 +341,17 @@ export default class LLMPlugin extends Plugin {
 		if (tabs.length > 0) {
 			tab = tabs[0];
 			// View already exists — load conversation directly if one is pending.
-			if (pendingIndex >= 0) {
+			if (pendingFilePath) {
+				this.pendingWidgetFilePath = null;
+				await (tab.view as WidgetView).loadChatFile(pendingFilePath);
+			} else if (pendingIndex >= 0) {
 				this.pendingWidgetHistoryIndex = -1;
 				(tab.view as WidgetView).loadConversation(pendingIndex);
 			}
 		} else {
 			tab = workspace.getLeaf("tab");
 			await tab.setViewState({ type: TAB_VIEW_TYPE, active: true });
-			// onOpen will handle auto-loading via pendingWidgetHistoryIndex.
+			// onOpen will handle auto-loading via pendingWidgetHistoryIndex / pendingWidgetFilePath.
 		}
 		workspace.revealLeaf(tab);
 	}
@@ -267,6 +359,7 @@ export default class LLMPlugin extends Plugin {
 	async activateSidebar() {
 		const { workspace } = this.app;
 		const pendingIndex = this.pendingWidgetHistoryIndex;
+		const pendingFilePath = this.pendingWidgetFilePath;
 
 		// Look for an existing widget leaf in the right sidebar.
 		const leaves = workspace.getLeavesOfType(TAB_VIEW_TYPE);
@@ -278,14 +371,17 @@ export default class LLMPlugin extends Plugin {
 		if (sidebarLeaf) {
 			leaf = sidebarLeaf;
 			// View already exists — load conversation directly if one is pending.
-			if (pendingIndex >= 0) {
+			if (pendingFilePath) {
+				this.pendingWidgetFilePath = null;
+				await (leaf.view as WidgetView).loadChatFile(pendingFilePath);
+			} else if (pendingIndex >= 0) {
 				this.pendingWidgetHistoryIndex = -1;
 				(leaf.view as WidgetView).loadConversation(pendingIndex);
 			}
 		} else {
 			leaf = workspace.getRightLeaf(false)!;
 			await leaf.setViewState({ type: TAB_VIEW_TYPE, active: true });
-			// onOpen will handle auto-loading via pendingWidgetHistoryIndex.
+			// onOpen will handle auto-loading via pendingWidgetHistoryIndex / pendingWidgetFilePath.
 		}
 		workspace.revealLeaf(leaf);
 	}
