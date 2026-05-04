@@ -1097,6 +1097,10 @@ button.llm-scan-button.is-active:hover {
 	box-shadow: none;
 }
 
+button.llm-scan-button.llm-hidden {
+	display: none;
+}
+
 /* STATUS BAR BUTTON */
 
 .llm-status-bar-button {

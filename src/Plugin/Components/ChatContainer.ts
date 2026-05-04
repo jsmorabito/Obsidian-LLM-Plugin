@@ -105,6 +105,7 @@ export class ChatContainer {
 	/** Optional callback set by the FAB header to sync the title display. */
 	headerTitleCallback: ((title: string) => void) | null = null;
 	chipContainer: HTMLElement | null = null;
+	addFilesButton: ButtonComponent | null = null;
 	scanButton: ButtonComponent | null = null;
 	activeFileForChip: { name: string } | null = null;
 	/** Stored so StatusBarButton (and FAB) can re-sync the displayed model after settings change. */
@@ -1164,6 +1165,12 @@ export class ChatContainer {
 
 		this.chipContainer.empty();
 
+		// When file context is disabled, show nothing
+		if (!this.plugin.settings.enableFileContext) {
+			this.chipContainer.style.display = "none";
+			return;
+		}
+
 		const hasActiveFile = this.useActiveFileContext && this.activeFileForChip;
 		const hasAdditional = contextSettings.selectedFiles.length > 0;
 
@@ -1300,7 +1307,8 @@ export class ChatContainer {
 		toolbarRight.addClass("llm-input-toolbar-right");
 
 		// Add files / file-picker button
-		const addFilesButton = new ButtonComponent(toolbarRight);
+		this.addFilesButton = new ButtonComponent(toolbarRight);
+		const addFilesButton = this.addFilesButton;
 		addFilesButton.setIcon("plus");
 		addFilesButton.setTooltip("Add files as context");
 		addFilesButton.buttonEl.addClass("llm-scan-button");
@@ -1349,6 +1357,9 @@ export class ChatContainer {
 				}
 			});
 		}
+
+		// Sync file-context button visibility based on the current setting
+		this.syncFileContextButtons();
 
 		// Send button
 		const sendButton = new ButtonComponent(toolbarRight);
@@ -1755,6 +1766,14 @@ export class ChatContainer {
 		if (!this.modelDropdown) return;
 		const settingType = getSettingType(this.viewType);
 		this.modelDropdown.setValue(this.plugin.settings[settingType].model);
+		this.syncFileContextButtons();
+	}
+
+	/** Show or hide the file-context buttons based on the enableFileContext setting. */
+	syncFileContextButtons() {
+		const enabled = this.plugin.settings.enableFileContext;
+		this.addFilesButton?.buttonEl.toggleClass("llm-hidden", !enabled);
+		this.scanButton?.buttonEl.toggleClass("llm-hidden", !enabled);
 	}
 
 	newChat() {
@@ -1769,7 +1788,10 @@ export class ChatContainer {
 		this.scanButton?.buttonEl.removeClass("is-active");
 
 		const settingType = getSettingType(this.viewType);
-		if (this.plugin.settings[settingType].contextSettings.includeActiveFile) {
+		if (
+			this.plugin.settings.enableFileContext &&
+			this.plugin.settings[settingType].contextSettings.includeActiveFile
+		) {
 			const activeFile = this.plugin.app.workspace.getActiveFile();
 			if (activeFile) {
 				this.useActiveFileContext = true;

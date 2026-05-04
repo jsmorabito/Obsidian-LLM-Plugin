@@ -41,7 +41,9 @@ export class SettingsContainer {
 		}
 		if (endpoint === chat || messages) {
 			this.generateChatSettings(parentContainer, modelType);
-			this.generateContextSettings(parentContainer);
+			if (this.plugin.settings.enableFileContext) {
+				this.generateContextSettings(parentContainer);
+			}
 		}
 	}
 
