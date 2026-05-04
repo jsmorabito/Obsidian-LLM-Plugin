@@ -4,6 +4,7 @@ import {
 	ButtonComponent,
 	DropdownComponent,
 	Modal,
+	Notice,
 	Setting,
 	setIcon,
 } from "obsidian";
@@ -628,14 +629,10 @@ export class LLMSettingsModal extends Modal {
 							);
 							this.plugin.settings.chatHistoryMigrated = true;
 							await this.plugin.saveSettings();
+							new Notice("✓ Legacy history has been migrated.");
 							renderHistorySection();
 						});
 					});
-			} else if (this.plugin.settings.chatHistoryMigrated) {
-				migrationEl.createEl("p", {
-					text: "✓ Legacy history has been migrated.",
-					cls: "setting-item-description",
-				});
 			}
 		};
 
