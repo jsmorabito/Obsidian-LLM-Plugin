@@ -333,6 +333,7 @@ export default class LLMPlugin extends Plugin {
 	async activateTab() {
 		const { workspace } = this.app;
 		const pendingIndex = this.pendingWidgetHistoryIndex;
+		const pendingFilePath = this.pendingWidgetFilePath;
 
 		let tab: WorkspaceLeaf | null = null;
 		const tabs = workspace.getLeavesOfType(TAB_VIEW_TYPE);
@@ -340,14 +341,17 @@ export default class LLMPlugin extends Plugin {
 		if (tabs.length > 0) {
 			tab = tabs[0];
 			// View already exists — load conversation directly if one is pending.
-			if (pendingIndex >= 0) {
+			if (pendingFilePath) {
+				this.pendingWidgetFilePath = null;
+				await (tab.view as WidgetView).loadChatFile(pendingFilePath);
+			} else if (pendingIndex >= 0) {
 				this.pendingWidgetHistoryIndex = -1;
 				(tab.view as WidgetView).loadConversation(pendingIndex);
 			}
 		} else {
 			tab = workspace.getLeaf("tab");
 			await tab.setViewState({ type: TAB_VIEW_TYPE, active: true });
-			// onOpen will handle auto-loading via pendingWidgetHistoryIndex.
+			// onOpen will handle auto-loading via pendingWidgetHistoryIndex / pendingWidgetFilePath.
 		}
 		workspace.revealLeaf(tab);
 	}
@@ -355,6 +359,7 @@ export default class LLMPlugin extends Plugin {
 	async activateSidebar() {
 		const { workspace } = this.app;
 		const pendingIndex = this.pendingWidgetHistoryIndex;
+		const pendingFilePath = this.pendingWidgetFilePath;
 
 		// Look for an existing widget leaf in the right sidebar.
 		const leaves = workspace.getLeavesOfType(TAB_VIEW_TYPE);
@@ -366,14 +371,17 @@ export default class LLMPlugin extends Plugin {
 		if (sidebarLeaf) {
 			leaf = sidebarLeaf;
 			// View already exists — load conversation directly if one is pending.
-			if (pendingIndex >= 0) {
+			if (pendingFilePath) {
+				this.pendingWidgetFilePath = null;
+				await (leaf.view as WidgetView).loadChatFile(pendingFilePath);
+			} else if (pendingIndex >= 0) {
 				this.pendingWidgetHistoryIndex = -1;
 				(leaf.view as WidgetView).loadConversation(pendingIndex);
 			}
 		} else {
 			leaf = workspace.getRightLeaf(false)!;
 			await leaf.setViewState({ type: TAB_VIEW_TYPE, active: true });
-			// onOpen will handle auto-loading via pendingWidgetHistoryIndex.
+			// onOpen will handle auto-loading via pendingWidgetHistoryIndex / pendingWidgetFilePath.
 		}
 		workspace.revealLeaf(leaf);
 	}

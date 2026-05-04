@@ -156,7 +156,9 @@ export class Header {
 					.setIcon("panel-right")
 					.onClick(() => {
 						const historyIndex = this.plugin.settings.fabSettings.historyIndex;
+						const historyFilePath = this.plugin.settings.fabSettings.historyFilePath;
 						this.plugin.pendingWidgetHistoryIndex = historyIndex;
+						this.plugin.pendingWidgetFilePath = historyFilePath;
 						this.plugin.activateSidebar();
 						closeCallback?.();
 					});
@@ -167,7 +169,9 @@ export class Header {
 					.setIcon("layout-dashboard")
 					.onClick(() => {
 						const historyIndex = this.plugin.settings.fabSettings.historyIndex;
+						const historyFilePath = this.plugin.settings.fabSettings.historyFilePath;
 						this.plugin.pendingWidgetHistoryIndex = historyIndex;
+						this.plugin.pendingWidgetFilePath = historyFilePath;
 						this.plugin.activateTab();
 						closeCallback?.();
 					});
