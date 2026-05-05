@@ -71,9 +71,23 @@ Provider SDKs used:
 - Ollama — uses `openai` SDK with custom baseURL (default `http://localhost:11434/v1`); models discovered dynamically
 - GPT4All connects to local server on port 4891
 
+### RAG / Vault Search
+
+The plugin supports semantic search over the user's vault via three classes in `src/RAG/`:
+
+- **`VectorStore.ts`** — Persists embeddings as a flat JSON file at `.obsidian/plugins/Obsidian-LLM-Plugin/rag-index.json`. Provides cosine similarity search and incremental updates (skips files whose `mtime` hasn't changed).
+- **`EmbeddingService.ts`** — Provider-agnostic embedding generation. Supports OpenAI (`text-embedding-3-small`), Gemini (`text-embedding-004`), and Ollama (via the OpenAI-compatible `/v1/embeddings` endpoint). Reuses API keys already stored in plugin settings.
+- **`VaultIndexer.ts`** — Orchestrates indexing (chunking by paragraph, ~1500 chars per chunk with file path + heading prefix) and exposes `semanticSearch(query, topK)` which returns a formatted markdown context block.
+
+**How it integrates:**
+- `LLMPlugin.vaultIndexer` is the singleton instance; call `plugin.initVaultIndexer()` after any RAG setting change.
+- `ObsidianToolRegistry` receives the `VaultIndexer` and exposes a `search_vault_semantic` tool (`risk: "safe"`). Tool-capable models (Claude, GPT-4, Gemini, Ollama, Mistral) call this autonomously via `AgentLoop`.
+- `ChatContainer` has a `useVaultSearch` toggle (toolbar button, visible when RAG is enabled) that pre-fills `pendingContextString` with top-k results — useful as a fallback or for models where the user wants guaranteed vault context.
+- RAG settings live under `plugin.settings.ragSettings` (`RAGSettings` type in `types.ts`) and are configured in `LLMSettingsModal` under the "Vault Search" tab.
+
 ### Key Files
 
-- `src/Types/types.ts` - TypeScript interfaces (ChatParams, ImageParams, etc.)
+- `src/Types/types.ts` - TypeScript interfaces (ChatParams, ImageParams, RAGSettings, etc.)
 - `src/utils/constants.ts` - Provider/model/endpoint constants (includes `images`, `chat`, `messages`, `assistant`, `claudeCodeEndpoint`, etc.)
 - `src/utils/models.ts` - Model configuration definitions
 - `src/utils/utils.ts` - API validation and helper functions

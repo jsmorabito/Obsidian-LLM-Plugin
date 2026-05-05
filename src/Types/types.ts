@@ -1,4 +1,5 @@
 import { assistant } from "utils/constants";
+import { EmbeddingProvider } from "RAG/EmbeddingService";
 
 export type ContextSettings = {
 	includeActiveFile: boolean;
@@ -153,3 +154,20 @@ type GeminiSettings = {
 }
 
 type GPT4AllSettings = {};
+
+export type RAGSettings = {
+	/** Whether RAG / vault semantic search is enabled at all. */
+	enabled: boolean;
+	/** Which provider to use for generating embeddings. */
+	embeddingProvider: EmbeddingProvider;
+	/** Model name for the chosen provider (e.g. "text-embedding-3-small"). */
+	embeddingModel: string;
+	/** Vault-root-relative folder paths to skip during indexing (e.g. "Templates"). */
+	excludedFolders: string[];
+	/** How many chunks to retrieve per query. */
+	topK: number;
+	/** Unix timestamp (ms) of the last completed index run, or null if never run. */
+	lastIndexed: number | null;
+	/** Number of files in the current index. */
+	indexedFileCount: number;
+};

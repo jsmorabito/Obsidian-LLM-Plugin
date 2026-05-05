@@ -13,6 +13,7 @@ import { App } from "obsidian";
 import { ChatParams, PermissionMode } from "Types/types";
 import { ObsidianToolRegistry } from "services/ObsidianToolRegistry";
 import { toAnthropicTools, toOpenAITools } from "services/ToolAdapters";
+import { VaultIndexer } from "RAG/VaultIndexer";
 
 /** Called by ChatContainer to render the approval card and await the user's choice. */
 export type ShowPermissionUI = (
@@ -36,9 +37,10 @@ export class AgentLoop {
 	constructor(
 		private app: App,
 		private permissionMode: PermissionMode,
-		private showPermissionUI: ShowPermissionUI
+		private showPermissionUI: ShowPermissionUI,
+		vaultIndexer?: VaultIndexer | null,
 	) {
-		this.registry = new ObsidianToolRegistry(app);
+		this.registry = new ObsidianToolRegistry(app, vaultIndexer ?? undefined);
 	}
 
 	// ---------------------------------------------------------------------------

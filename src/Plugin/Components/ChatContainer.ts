@@ -99,6 +99,8 @@ export class ChatContainer {
 	pendingContextString: string | null = null; // Context string to inject into API call (not shown in UI)
 	claudeCodeSessionId: string | null = null;
 	useActiveFileContext: boolean = false;
+	/** When true (and RAG is enabled), embed the query and prepend top-k vault chunks before sending. */
+	useVaultSearch: boolean = false;
 	/** Resolves when the most recent generateIMLikeMessages render is complete. */
 	private renderingPromise: Promise<void> = Promise.resolve();
 	/** Tracks the file path for the currently active chat file (file-based history only). Cleared on new chat. */
@@ -636,6 +638,29 @@ export class ChatContainer {
 			}
 		}
 
+		// Vault search (RAG) fallback — for all models when the user has toggled "Search vault".
+		// Agent-capable models also have the search_vault_semantic tool, so they can call it
+		// autonomously; this block pre-fills context for models that may not call the tool,
+		// or when the user explicitly wants vault context injected.
+		if (
+			this.useVaultSearch &&
+			modelEndpoint !== images &&
+			this.plugin.vaultIndexer &&
+			this.plugin.settings.ragSettings.enabled
+		) {
+			try {
+				const ragContext = await this.plugin.vaultIndexer.semanticSearch(
+					this.prompt,
+					this.plugin.settings.ragSettings.topK
+				);
+				this.pendingContextString = ragContext +
+					(this.pendingContextString ? "\n\n---\n\n" + this.pendingContextString : "");
+			} catch (error) {
+				console.error("[RAG] Vault search failed:", error);
+				new Notice("Vault search failed — sending without vault context.");
+			}
+		}
+
 		// Active file context toggle (explicit user action via scan button)
 		if (this.useActiveFileContext && modelEndpoint !== images) {
 			try {
@@ -862,7 +887,8 @@ export class ChatContainer {
 		const agentLoop = new AgentLoop(
 			this.plugin.app,
 			permissionMode,
-			this.showPermissionUI.bind(this)
+			this.showPermissionUI.bind(this),
+			this.plugin.vaultIndexer,
 		);
 
 		const callbacks: AgentCallbacks = {
@@ -1355,6 +1381,23 @@ export class ChatContainer {
 					this.activeFileForChip = null;
 					this.scanButton!.buttonEl.removeClass("is-active");
 					this.syncChips();
+				}
+			});
+		}
+
+		// Vault search toggle button — visible only when RAG is enabled
+		if (this.plugin.settings.ragSettings?.enabled && this.plugin.vaultIndexer) {
+			const vaultSearchButton = new ButtonComponent(toolbarRight);
+			vaultSearchButton.setIcon("search");
+			vaultSearchButton.setTooltip("Search vault (RAG)");
+			vaultSearchButton.buttonEl.addClass("llm-scan-button");
+
+			vaultSearchButton.onClick(() => {
+				this.useVaultSearch = !this.useVaultSearch;
+				if (this.useVaultSearch) {
+					vaultSearchButton.buttonEl.addClass("is-active");
+				} else {
+					vaultSearchButton.buttonEl.removeClass("is-active");
 				}
 			});
 		}

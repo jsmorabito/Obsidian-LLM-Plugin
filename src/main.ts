@@ -3,9 +3,13 @@ import {
 	HistoryItem,
 	ImageQuality,
 	ImageSize,
+	RAGSettings,
 	ResponseFormat,
 	ViewSettings,
 } from "./Types/types";
+import { VaultIndexer } from "RAG/VaultIndexer";
+import { VectorStore } from "RAG/VectorStore";
+import { EmbeddingService, DEFAULT_EMBEDDING_MODELS } from "RAG/EmbeddingService";
 
 import { History } from "History/HistoryHandler";
 import { ChatHistory } from "services/ChatHistory";
@@ -73,6 +77,7 @@ export interface LLMPluginSettings {
 	emptyChatAvatar: string;
 	fabViewHeight?: number;
 	showStatusBarButton: boolean;
+	ragSettings: RAGSettings;
 }
 
 const defaultSettings = {
@@ -145,6 +150,15 @@ export const DEFAULT_SETTINGS: LLMPluginSettings = {
 	ollamaModels: [],
 	emptyChatAvatar: "llm-gal",
 	showStatusBarButton: false,
+	ragSettings: {
+		enabled: false,
+		embeddingProvider: "openai",
+		embeddingModel: DEFAULT_EMBEDDING_MODELS["openai"],
+		excludedFolders: [],
+		topK: 5,
+		lastIndexed: null,
+		indexedFileCount: 0,
+	},
 };
 
 export default class LLMPlugin extends Plugin {
@@ -162,6 +176,8 @@ export default class LLMPlugin extends Plugin {
 	pendingWidgetHistoryIndex: number = -1;
 	/** Transient — set before opening the widget to auto-load a chat file by vault path. */
 	pendingWidgetFilePath: string | null = null;
+	/** RAG vault indexer — initialized after settings load, null if RAG is disabled or misconfigured. */
+	vaultIndexer: VaultIndexer | null = null;
 
 	async onload() {
 		this.fileSystem = Platform.isDesktop
@@ -171,6 +187,7 @@ export default class LLMPlugin extends Plugin {
 			? new DesktopOperatingSystem()
 			: new MobileOperatingSystem();
 		await this.loadSettings();
+		this.initVaultIndexer();
 		this.registerOllamaModels();
 		await this.checkForAPIKeyBasedModel();
 		this.registerRibbonIcons();
@@ -275,6 +292,27 @@ export default class LLMPlugin extends Plugin {
 			await leaf.setViewState({ type: TAB_VIEW_TYPE, active: true });
 			workspace.revealLeaf(leaf);
 		}
+	}
+
+	/**
+	 * Build (or rebuild) the VaultIndexer from current ragSettings.
+	 * Safe to call after any settings change that affects RAG configuration.
+	 */
+	initVaultIndexer(): void {
+		const rag = this.settings.ragSettings;
+		if (!rag?.enabled) {
+			this.vaultIndexer = null;
+			return;
+		}
+		const embeddingService = new EmbeddingService({
+			provider: rag.embeddingProvider,
+			model: rag.embeddingModel,
+			openAIKey: this.settings.openAIAPIKey,
+			geminiKey: this.settings.geminiAPIKey,
+			ollamaHost: this.settings.ollamaHost,
+		});
+		const store = new VectorStore(this.app);
+		this.vaultIndexer = new VaultIndexer(this.app, store, embeddingService);
 	}
 
 	onunload() {
@@ -418,6 +456,12 @@ export default class LLMPlugin extends Plugin {
 
 			this.settings.fabSettings.historyIndex = -1;
 			this.settings.widgetSettings.historyIndex = -1;
+
+			// Deep-merge ragSettings so new fields get defaults if missing from saved data
+			this.settings.ragSettings = {
+				...DEFAULT_SETTINGS.ragSettings,
+				...(dataJSON.ragSettings ?? {}),
+			};
 
 			// Ensure emptyChatAvatar is a valid known value; fall back to default
 			// if the saved value is missing or was corrupted (e.g. from a partial write).

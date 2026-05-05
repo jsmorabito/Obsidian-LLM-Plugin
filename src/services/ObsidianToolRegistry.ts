@@ -1,5 +1,6 @@
 import { App, TFile } from "obsidian";
 import { RiskTier } from "Types/types";
+import { VaultIndexer } from "RAG/VaultIndexer";
 
 export interface NeutralToolDefinition {
 	name: string;
@@ -114,9 +115,22 @@ export class ObsidianToolRegistry {
 			},
 			risk: "danger",
 		},
+		{
+			name: "search_vault_semantic",
+			description: "Semantically search the user's Obsidian vault using vector similarity. Use this when the user's question might be answered by information in their notes, or when they ask about something they may have written down. Returns the most relevant note excerpts.",
+			parameters: {
+				type: "object",
+				properties: {
+					query: { type: "string", description: "Natural language search query describing what to look for in the vault." },
+					limit: { type: "string", description: "Number of results to return (1–10, default 5)." },
+				},
+				required: ["query"],
+			},
+			risk: "safe",
+		},
 	];
 
-	constructor(private app: App) {}
+	constructor(private app: App, private vaultIndexer?: VaultIndexer) {}
 
 	getTools(): NeutralToolDefinition[] {
 		return this.tools;
@@ -209,6 +223,16 @@ export class ObsidianToolRegistry {
 					return success
 						? { success: true, result: `Executed command: ${command_id}` }
 						: { success: false, error: `Command not found or failed: ${command_id}` };
+				}
+
+				case "search_vault_semantic": {
+					if (!this.vaultIndexer) {
+						return { success: false, error: "Vault search is not configured. Enable RAG in plugin settings and index your vault first." };
+					}
+					const { query, limit } = input as { query: string; limit?: string };
+					const topK = Math.min(10, Math.max(1, parseInt(limit ?? "5", 10) || 5));
+					const result = await this.vaultIndexer.semanticSearch(query, topK);
+					return { success: true, result };
 				}
 
 				default:
