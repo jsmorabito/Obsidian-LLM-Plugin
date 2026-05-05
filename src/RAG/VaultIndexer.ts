@@ -1,5 +1,5 @@
 import { App, TFile } from "obsidian";
-import { EmbeddingService } from "./EmbeddingService";
+import { EmbeddingService, OllamaModelNotFoundError } from "./EmbeddingService";
 import { VectorStore } from "./VectorStore";
 
 const MAX_CHUNK_CHARS = 1500; // ~375 tokens — safe for all providers
@@ -36,6 +36,10 @@ export class VaultIndexer {
 		excludedFolders: string[] = [],
 		onProgress?: ProgressCallback,
 	): Promise<{ indexed: number; skipped: number }> {
+		// Proactively check that the Ollama model is available before starting
+		// so the user gets a clear error immediately rather than failing mid-index.
+		await this.embedding.checkOllamaModel();
+
 		await this.store.load();
 
 		const files = this.app.vault
@@ -63,6 +67,17 @@ export class VaultIndexer {
 		return { indexed, skipped };
 	}
 
+	/** Persist the current index to disk. */
+	async save(): Promise<void> {
+		await this.store.save();
+	}
+
+	/** Remove a file from the index and persist. */
+	async removeFile(filePath: string): Promise<void> {
+		this.store.remove(filePath);
+		await this.store.save();
+	}
+
 	/** Index (or re-index) a single file. Does NOT call store.save() — caller must. */
 	async indexFile(file: TFile): Promise<void> {
 		const content = await this.app.vault.read(file);
@@ -86,7 +101,7 @@ export class VaultIndexer {
 	async semanticSearch(query: string, topK = 5): Promise<string> {
 		await this.store.load();
 		const queryVector = await this.embedding.embed(query);
-		const results = this.store.search(queryVector, topK);
+		const results = this.store.hybridSearch(queryVector, query, topK);
 
 		if (results.length === 0) {
 			return "No relevant notes found in vault.";
@@ -96,13 +111,13 @@ export class VaultIndexer {
 	}
 
 	/**
-	 * Raw search — returns structured results rather than formatted text.
-	 * Useful for future features (e.g. citations).
+	 * Raw hybrid search — returns structured results rather than formatted text.
+	 * Useful for features like cited sources.
 	 */
 	async search(query: string, topK = 5): Promise<SearchResult[]> {
 		await this.store.load();
 		const queryVector = await this.embedding.embed(query);
-		return this.store.search(queryVector, topK);
+		return this.store.hybridSearch(queryVector, query, topK);
 	}
 
 	// ── Helpers ───────────────────────────────────────────────────────────────

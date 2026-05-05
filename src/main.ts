@@ -178,6 +178,8 @@ export default class LLMPlugin extends Plugin {
 	pendingWidgetFilePath: string | null = null;
 	/** RAG vault indexer — initialized after settings load, null if RAG is disabled or misconfigured. */
 	vaultIndexer: VaultIndexer | null = null;
+	/** Debounce timers keyed by file path — prevents hammering the embedding API on rapid saves. */
+	private ragDebounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
 	async onload() {
 		this.fileSystem = Platform.isDesktop
@@ -188,6 +190,7 @@ export default class LLMPlugin extends Plugin {
 			: new MobileOperatingSystem();
 		await this.loadSettings();
 		this.initVaultIndexer();
+		this.registerRagVaultEvents();
 		this.registerOllamaModels();
 		await this.checkForAPIKeyBasedModel();
 		this.registerRibbonIcons();
@@ -292,6 +295,69 @@ export default class LLMPlugin extends Plugin {
 			await leaf.setViewState({ type: TAB_VIEW_TYPE, active: true });
 			workspace.revealLeaf(leaf);
 		}
+	}
+
+	/**
+	 * Register vault file events to keep the RAG index incrementally up-to-date.
+	 * Modify events are debounced (2 s) so rapid autosaves don't hammer the embedding API.
+	 * Uses Obsidian's registerEvent so listeners are automatically cleaned up on unload.
+	 */
+	private registerRagVaultEvents(): void {
+		const DEBOUNCE_MS = 2000;
+
+		this.registerEvent(
+			this.app.vault.on("modify", (file) => {
+				if (!this.vaultIndexer || !this.settings.ragSettings?.enabled) return;
+				if (!(file as any).extension || (file as any).extension !== "md") return;
+
+				const path = file.path;
+				const existing = this.ragDebounceTimers.get(path);
+				if (existing) clearTimeout(existing);
+
+				const timer = setTimeout(async () => {
+					this.ragDebounceTimers.delete(path);
+					try {
+						await this.vaultIndexer!.indexFile(file as import("obsidian").TFile);
+						await this.vaultIndexer!.save();
+					} catch (e) {
+						console.error("[RAG] Auto-reindex failed for", path, e);
+					}
+				}, DEBOUNCE_MS);
+
+				this.ragDebounceTimers.set(path, timer);
+			})
+		);
+
+		this.registerEvent(
+			this.app.vault.on("delete", (file) => {
+				if (!this.vaultIndexer || !this.settings.ragSettings?.enabled) return;
+				if ((file as any).extension !== "md") return;
+
+				// Cancel any pending reindex for this file
+				const timer = this.ragDebounceTimers.get(file.path);
+				if (timer) {
+					clearTimeout(timer);
+					this.ragDebounceTimers.delete(file.path);
+				}
+
+				this.vaultIndexer.removeFile(file.path).catch((e) => {
+					console.error("[RAG] Failed to remove deleted file from index:", file.path, e);
+				});
+			})
+		);
+
+		this.registerEvent(
+			this.app.vault.on("rename", (file, oldPath) => {
+				if (!this.vaultIndexer || !this.settings.ragSettings?.enabled) return;
+				if ((file as any).extension !== "md") return;
+
+				// Remove old path, re-index under new path
+				this.vaultIndexer.removeFile(oldPath).catch(() => {});
+				this.vaultIndexer.indexFile(file as import("obsidian").TFile)
+					.then(() => this.vaultIndexer!.save())
+					.catch((e) => console.error("[RAG] Failed to reindex renamed file:", e));
+			})
+		);
 	}
 
 	/**

@@ -94,9 +94,56 @@ export class EmbeddingService {
 			baseURL: `${host}/v1`,
 			dangerouslyAllowBrowser: true,
 		});
-		const response = await client.embeddings.create({ model, input: text });
-		const embedding = response.data[0]?.embedding;
-		if (!embedding) throw new Error("[RAG] Ollama returned no embedding");
-		return embedding;
+		try {
+			const response = await client.embeddings.create({ model, input: text });
+			const embedding = response.data[0]?.embedding;
+			if (!embedding) throw new Error("[RAG] Ollama returned no embedding");
+			return embedding;
+		} catch (e: any) {
+			// Ollama returns a 404 with "model not found" when the model isn't pulled.
+			// Surface a clear, actionable message rather than a raw API error.
+			const msg: string = e?.message ?? String(e);
+			if (msg.includes("404") || msg.toLowerCase().includes("model") && msg.toLowerCase().includes("not found")) {
+				throw new OllamaModelNotFoundError(model, host);
+			}
+			throw e;
+		}
+	}
+
+	/**
+	 * Check whether the configured Ollama model is available without running an
+	 * embedding. Resolves to `true` if available, `false` if Ollama is unreachable,
+	 * throws `OllamaModelNotFoundError` if Ollama is up but the model isn't pulled.
+	 */
+	async checkOllamaModel(): Promise<boolean> {
+		if (this.config.provider !== "ollama") return true;
+		const host = this.config.ollamaHost ?? "http://localhost:11434";
+		const model = this.config.model;
+		try {
+			// Hit the Ollama /api/tags endpoint to list pulled models
+			const res = await fetch(`${host}/api/tags`);
+			if (!res.ok) return false; // Ollama unreachable / non-200
+			const data = await res.json() as { models?: Array<{ name: string }> };
+			const pulled = (data.models ?? []).map(m => m.name.split(":")[0]);
+			const modelBase = model.split(":")[0];
+			if (!pulled.includes(modelBase)) {
+				throw new OllamaModelNotFoundError(model, host);
+			}
+			return true;
+		} catch (e) {
+			if (e instanceof OllamaModelNotFoundError) throw e;
+			return false; // Ollama not running — fail gracefully
+		}
+	}
+}
+
+/** Thrown when the configured Ollama embedding model hasn't been pulled yet. */
+export class OllamaModelNotFoundError extends Error {
+	constructor(public readonly model: string, public readonly host: string) {
+		super(
+			`[RAG] Ollama model "${model}" is not available at ${host}. ` +
+			`Pull it first by running: ollama pull ${model}`
+		);
+		this.name = "OllamaModelNotFoundError";
 	}
 }

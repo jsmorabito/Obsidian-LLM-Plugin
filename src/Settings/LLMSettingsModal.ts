@@ -13,7 +13,7 @@ import { buildOllamaModels, modelNames, models } from "utils/models";
 import { GPT4All, ollama } from "utils/constants";
 import { FAB } from "Plugin/FAB/FAB";
 import { ChatModal2 } from "Plugin/Modal/ChatModal2";
-import { DEFAULT_EMBEDDING_MODELS, EmbeddingProvider } from "RAG/EmbeddingService";
+import { DEFAULT_EMBEDDING_MODELS, EmbeddingProvider, OllamaModelNotFoundError } from "RAG/EmbeddingService";
 
 type APIKeyType = "claude" | "gemini" | "openai" | "mistral";
 
@@ -780,10 +780,20 @@ export class LLMSettingsModal extends Modal {
 						new Notice(`✓ Vault indexed — ${indexed} updated, ${skipped} unchanged.`);
 						this.renderTab("vault-search");
 					} catch (e: any) {
-						new Notice(`Indexing failed: ${e?.message ?? String(e)}`);
+						if (e instanceof OllamaModelNotFoundError) {
+							new Notice(
+								`Ollama model "${e.model}" isn't pulled yet.\n\nRun this in your terminal:\n  ollama pull ${e.model}`,
+								10000
+							);
+							indexSetting.setDesc(
+								`Model not found. Run: ollama pull ${e.model}`
+							);
+						} else {
+							new Notice(`Indexing failed: ${e?.message ?? String(e)}`);
+							indexSetting.setDesc(lastIndexedText);
+						}
 						button.setButtonText("Index now");
 						button.setDisabled(false);
-						indexSetting.setDesc(lastIndexedText);
 					}
 				});
 			});
