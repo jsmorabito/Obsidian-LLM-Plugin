@@ -923,12 +923,17 @@ export class ChatContainer {
 				// onChunk will replace streamingDiv content with accumulated text.
 				this.showThinkingAnimation();
 			},
-			onToolResult: (toolName, result) => {
+			onToolResult: (toolName, input, result) => {
 				if (toolName === "search_vault_semantic") {
 					// Extract ### file/path.md headers from the formatted result block
 					const paths = extractRagSourcePaths(result);
 					for (const p of paths) {
 						if (!this.pendingRagSources.includes(p)) this.pendingRagSources.push(p);
+					}
+				} else if (toolName === "obsidian_read_note" && typeof input.path === "string") {
+					// The model explicitly read a note — that note is a source
+					if (!this.pendingRagSources.includes(input.path)) {
+						this.pendingRagSources.push(input.path);
 					}
 				}
 			},
