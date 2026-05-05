@@ -31,3 +31,4 @@ data.json
 __pycache__/
 .beads/
 data-backup.json
+rag-index.json

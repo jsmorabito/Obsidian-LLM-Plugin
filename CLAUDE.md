@@ -71,9 +71,26 @@ Provider SDKs used:
 - Ollama — uses `openai` SDK with custom baseURL (default `http://localhost:11434/v1`); models discovered dynamically
 - GPT4All connects to local server on port 4891
 
+### RAG / Vault Search
+
+The plugin supports semantic search over the user's vault via three classes in `src/RAG/`:
+
+- **`VectorStore.ts`** — Persists embeddings as a flat JSON file at `.obsidian/plugins/Obsidian-LLM-Plugin/rag-index.json`. Provides cosine similarity search and incremental updates (skips files whose `mtime` hasn't changed).
+- **`EmbeddingService.ts`** — Provider-agnostic embedding generation. Supports OpenAI (`text-embedding-3-small`), Gemini (`text-embedding-004`), and Ollama (via the OpenAI-compatible `/v1/embeddings` endpoint). Reuses API keys already stored in plugin settings.
+- **`VaultIndexer.ts`** — Orchestrates indexing (chunking by paragraph, ~1500 chars per chunk with file path + heading prefix) and exposes `semanticSearch(query, topK)` which returns a formatted markdown context block. Calls `EmbeddingService.checkOllamaModel()` before indexing to surface a clear pull-command error if the Ollama model isn't available.
+
+**How it integrates:**
+- `LLMPlugin.vaultIndexer` is the singleton instance; call `plugin.initVaultIndexer()` after any RAG setting change.
+- `LLMPlugin` registers `vault.on('modify')`, `vault.on('delete')`, and `vault.on('rename')` events to keep the index incrementally up-to-date. Modify events are debounced (2 s) to avoid hammering the embedding API during rapid autosaves.
+- `ObsidianToolRegistry` receives the `VaultIndexer` and exposes a `search_vault_semantic` tool (`risk: "safe"`). Tool-capable models (Claude, GPT-4, Gemini, Ollama, Mistral) call this autonomously via `AgentLoop`.
+- `AgentLoop` fires `AgentCallbacks.onToolResult(toolName, result)` after each successful tool execution — `ChatContainer` uses this to capture `search_vault_semantic` results and populate the cited sources panel.
+- `ChatContainer` has a `useVaultSearch` toggle (toolbar button, visible when RAG is enabled) that pre-fills `pendingContextString` with top-k results — useful as a fallback or for models where the user wants guaranteed vault context. After generation, a collapsible "Sources" panel (`<details class="llm-rag-sources">`) is appended listing the contributing files as clickable links.
+- Search uses **hybrid scoring**: 70% cosine similarity + 30% BM25 keyword score. BM25 IDF is computed at search time across the in-memory corpus. The `VectorStore.hybridSearch()` method handles both; `VectorStore.search()` delegates to it with full vector weight for pure semantic use.
+- RAG settings live under `plugin.settings.ragSettings` (`RAGSettings` type in `types.ts`) and are configured in `LLMSettingsModal` under the "Vault Search" tab.
+
 ### Key Files
 
-- `src/Types/types.ts` - TypeScript interfaces (ChatParams, ImageParams, etc.)
+- `src/Types/types.ts` - TypeScript interfaces (ChatParams, ImageParams, RAGSettings, etc.)
 - `src/utils/constants.ts` - Provider/model/endpoint constants (includes `images`, `chat`, `messages`, `assistant`, `claudeCodeEndpoint`, etc.)
 - `src/utils/models.ts` - Model configuration definitions
 - `src/utils/utils.ts` - API validation and helper functions

@@ -1423,3 +1423,52 @@ button.llm-permission-allow {
 	color: var(--text-normal);
 	margin: 0;
 }
+
+/* RAG cited sources panel */
+.llm-rag-sources {
+	margin-top: var(--size-4-2);
+	border-top: 1px solid var(--background-modifier-border);
+	padding-top: var(--size-4-2);
+}
+
+.llm-rag-sources-summary {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	cursor: pointer;
+	user-select: none;
+	list-style: none;
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+}
+
+.llm-rag-sources-summary::before {
+	content: "›";
+	display: inline-block;
+	transition: transform 100ms ease;
+}
+
+details[open] .llm-rag-sources-summary::before {
+	transform: rotate(90deg);
+}
+
+.llm-rag-sources-list {
+	margin: var(--size-4-2) 0 0 var(--size-4-4);
+	padding: 0;
+	list-style: disc;
+}
+
+.llm-rag-sources-list li {
+	margin-bottom: var(--size-4-1);
+}
+
+.llm-rag-source-link {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-accent);
+	cursor: pointer;
+	text-decoration: none;
+}
+
+.llm-rag-source-link:hover {
+	text-decoration: underline;
+}

@@ -13,6 +13,7 @@ import { App } from "obsidian";
 import { ChatParams, PermissionMode } from "Types/types";
 import { ObsidianToolRegistry } from "services/ObsidianToolRegistry";
 import { toAnthropicTools, toOpenAITools } from "services/ToolAdapters";
+import { VaultIndexer } from "RAG/VaultIndexer";
 
 /** Called by ChatContainer to render the approval card and await the user's choice. */
 export type ShowPermissionUI = (
@@ -28,6 +29,8 @@ export interface AgentCallbacks {
 	onChunk: (text: string) => void;
 	/** Called between tool execution and the next API request — re-show thinking. */
 	onThinking: () => void;
+	/** Optional — called after each successful tool execution with the tool name, input, and result text. */
+	onToolResult?: (toolName: string, input: Record<string, any>, result: string) => void;
 }
 
 export class AgentLoop {
@@ -36,9 +39,10 @@ export class AgentLoop {
 	constructor(
 		private app: App,
 		private permissionMode: PermissionMode,
-		private showPermissionUI: ShowPermissionUI
+		private showPermissionUI: ShowPermissionUI,
+		vaultIndexer?: VaultIndexer | null,
 	) {
-		this.registry = new ObsidianToolRegistry(app);
+		this.registry = new ObsidianToolRegistry(app, vaultIndexer ?? undefined);
 	}
 
 	// ---------------------------------------------------------------------------
@@ -170,6 +174,7 @@ export class AgentLoop {
 				if (allowed) {
 					const result = await this.registry.executeTool(block.name, input);
 					resultText = result.success ? (result.result ?? "Done.") : `Error: ${result.error}`;
+					if (result.success) callbacks.onToolResult?.(block.name, input, resultText);
 				} else {
 					resultText = "Action denied by user.";
 				}
@@ -292,6 +297,7 @@ export class AgentLoop {
 				if (allowed) {
 					const result = await this.registry.executeTool(tc.name, input);
 					resultText = result.success ? (result.result ?? "Done.") : `Error: ${result.error}`;
+					if (result.success) callbacks.onToolResult?.(tc.name, input, resultText);
 				} else {
 					resultText = "Action denied by user.";
 				}

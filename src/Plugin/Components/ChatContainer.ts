@@ -99,6 +99,10 @@ export class ChatContainer {
 	pendingContextString: string | null = null; // Context string to inject into API call (not shown in UI)
 	claudeCodeSessionId: string | null = null;
 	useActiveFileContext: boolean = false;
+	/** When true (and RAG is enabled), embed the query and prepend top-k vault chunks before sending. */
+	useVaultSearch: boolean = false;
+	/** File paths retrieved by vault search for the current generation — cleared after appending sources panel. */
+	private pendingRagSources: string[] = [];
 	/** Resolves when the most recent generateIMLikeMessages render is complete. */
 	private renderingPromise: Promise<void> = Promise.resolve();
 	/** Tracks the file path for the currently active chat file (file-based history only). Cleared on new chat. */
@@ -636,6 +640,34 @@ export class ChatContainer {
 			}
 		}
 
+		// Vault search (RAG) fallback — for all models when the user has toggled "Search vault".
+		// Agent-capable models also have the search_vault_semantic tool, so they can call it
+		// autonomously; this block pre-fills context for models that may not call the tool,
+		// or when the user explicitly wants vault context injected.
+		if (
+			this.useVaultSearch &&
+			modelEndpoint !== images &&
+			this.plugin.vaultIndexer &&
+			this.plugin.settings.ragSettings.enabled
+		) {
+			try {
+				const ragResults = await this.plugin.vaultIndexer.search(
+					this.prompt,
+					this.plugin.settings.ragSettings.topK
+				);
+				if (ragResults.length > 0) {
+					// Deduplicate source paths while preserving rank order
+					this.pendingRagSources = [...new Set(ragResults.map(r => r.filePath))];
+					const ragContext = formatRagResultsAsContext(ragResults);
+					this.pendingContextString = ragContext +
+						(this.pendingContextString ? "\n\n---\n\n" + this.pendingContextString : "");
+				}
+			} catch (error) {
+				console.error("[RAG] Vault search failed:", error);
+				new Notice("Vault search failed — sending without vault context.");
+			}
+		}
+
 		// Active file context toggle (explicit user action via scan button)
 		if (this.useActiveFileContext && modelEndpoint !== images) {
 			try {
@@ -692,6 +724,11 @@ export class ChatContainer {
 				} else {
 					await this.handleGenerate();
 				}
+				// Append cited sources panel if vault search was used
+				if (this.pendingRagSources.length > 0) {
+					this.appendSourcesPanel(this.loadingDivContainer, this.pendingRagSources);
+					this.pendingRagSources = [];
+				}
 				// Clear context after generation
 				this.currentVaultContext = null;
 				this.pendingContextString = null;
@@ -739,6 +776,7 @@ export class ChatContainer {
 			sendButton.setDisabled(false);
 			this.plugin.settings.GPT4AllStreaming = false;
 			this.prompt = "";
+			this.pendingRagSources = [];
 			errorMessages(error, params);
 			if (this.getMessages().length > 0) {
 				setTimeout(() => {
@@ -862,7 +900,8 @@ export class ChatContainer {
 		const agentLoop = new AgentLoop(
 			this.plugin.app,
 			permissionMode,
-			this.showPermissionUI.bind(this)
+			this.showPermissionUI.bind(this),
+			this.plugin.vaultIndexer,
 		);
 
 		const callbacks: AgentCallbacks = {
@@ -883,6 +922,20 @@ export class ChatContainer {
 				// Between tool turns: show thinking animation again; the next
 				// onChunk will replace streamingDiv content with accumulated text.
 				this.showThinkingAnimation();
+			},
+			onToolResult: (toolName, input, result) => {
+				if (toolName === "search_vault_semantic") {
+					// Extract ### file/path.md headers from the formatted result block
+					const paths = extractRagSourcePaths(result);
+					for (const p of paths) {
+						if (!this.pendingRagSources.includes(p)) this.pendingRagSources.push(p);
+					}
+				} else if (toolName === "obsidian_read_note" && typeof input.path === "string") {
+					// The model explicitly read a note — that note is a source
+					if (!this.pendingRagSources.includes(input.path)) {
+						this.pendingRagSources.push(input.path);
+					}
+				}
 			},
 		};
 
@@ -1359,6 +1412,43 @@ export class ChatContainer {
 			});
 		}
 
+		// Vault search toggle button — only shown when RAG is enabled AND the current
+		// model doesn't support agent tool-calling (agent models get the tool automatically).
+		if (this.plugin.settings.ragSettings?.enabled && this.plugin.vaultIndexer) {
+			const vaultSearchButton = new ButtonComponent(toolbarRight);
+			vaultSearchButton.setIcon("search");
+			vaultSearchButton.setTooltip("Search vault (RAG)");
+			vaultSearchButton.buttonEl.addClass("llm-scan-button");
+
+			// Hide/show based on whether the selected model supports agent mode
+			const syncVaultSearchVisibility = (modelType: string) => {
+				const hidden = this.supportsAgentMode(modelType);
+				vaultSearchButton.buttonEl.toggleClass("llm-hidden", hidden);
+				// If we just hid it, also deactivate the toggle so it doesn't
+				// silently inject context on the next send
+				if (hidden) {
+					this.useVaultSearch = false;
+					vaultSearchButton.buttonEl.removeClass("is-active");
+				}
+			};
+
+			// Set initial visibility from the currently selected model
+			syncVaultSearchVisibility(viewSettings.modelType);
+
+			vaultSearchButton.onClick(() => {
+				this.useVaultSearch = !this.useVaultSearch;
+				vaultSearchButton.buttonEl.toggleClass("is-active", this.useVaultSearch);
+			});
+
+			// Re-evaluate whenever the user switches models
+			modelDropdown.onChange((change) => {
+				const modelName = modelNames[change];
+				if (modelName && models[modelName]) {
+					syncVaultSearchVisibility(models[modelName].type);
+				}
+			});
+		}
+
 		// Sync file-context button visibility based on the current setting
 		this.syncFileContextButtons();
 
@@ -1777,6 +1867,29 @@ export class ChatContainer {
 		this.scanButton?.buttonEl.toggleClass("llm-hidden", !enabled);
 	}
 
+	/**
+	 * Append a collapsible "Sources" disclosure panel to the response container
+	 * listing the vault files that contributed context to this response.
+	 */
+	private appendSourcesPanel(container: HTMLElement, sourcePaths: string[]): void {
+		const details = container.createEl("details", { cls: "llm-rag-sources" });
+		const summary = details.createEl("summary", { cls: "llm-rag-sources-summary" });
+		summary.setText(`${sourcePaths.length} source${sourcePaths.length !== 1 ? "s" : ""}`);
+
+		const list = details.createEl("ul", { cls: "llm-rag-sources-list" });
+		for (const path of sourcePaths) {
+			const item = list.createEl("li");
+			const link = item.createEl("a", { cls: "llm-rag-source-link", text: path });
+			link.addEventListener("click", (e) => {
+				e.preventDefault();
+				const file = this.plugin.app.vault.getAbstractFileByPath(path);
+				if (file) {
+					this.plugin.app.workspace.getLeaf(false).openFile(file as import("obsidian").TFile);
+				}
+			});
+		}
+	}
+
 	newChat() {
 		this.historyMessages.empty();
 		this.claudeCodeSessionId = null;
@@ -1803,4 +1916,36 @@ export class ChatContainer {
 
 		this.syncChips();
 	}
+}
+
+// ── RAG helpers ───────────────────────────────────────────────────────────────
+
+/** Format raw search results into an injectable markdown context block. */
+function formatRagResultsAsContext(results: import("RAG/VaultIndexer").SearchResult[]): string {
+	const lines: string[] = [
+		"## Relevant notes from your vault",
+		"",
+		"The following excerpts were retrieved based on semantic similarity to your query.",
+		"Use them to inform your response where relevant.",
+		"",
+	];
+	for (const result of results) {
+		lines.push(`### ${result.filePath}`);
+		lines.push(result.text);
+		lines.push("");
+	}
+	return lines.join("\n");
+}
+
+/**
+ * Extract vault-relative file paths from a formatted RAG context block.
+ * Looks for `### path/to/note.md` lines produced by formatRagResultsAsContext.
+ */
+function extractRagSourcePaths(contextText: string): string[] {
+	const paths: string[] = [];
+	for (const line of contextText.split("\n")) {
+		const match = line.match(/^### (.+\.md)$/);
+		if (match) paths.push(match[1]);
+	}
+	return paths;
 }

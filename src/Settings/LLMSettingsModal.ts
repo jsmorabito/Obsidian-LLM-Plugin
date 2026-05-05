@@ -13,6 +13,7 @@ import { buildOllamaModels, modelNames, models } from "utils/models";
 import { GPT4All, ollama } from "utils/constants";
 import { FAB } from "Plugin/FAB/FAB";
 import { ChatModal2 } from "Plugin/Modal/ChatModal2";
+import { DEFAULT_EMBEDDING_MODELS, EmbeddingProvider, OllamaModelNotFoundError } from "RAG/EmbeddingService";
 
 type APIKeyType = "claude" | "gemini" | "openai" | "mistral";
 
@@ -82,11 +83,18 @@ export class LLMSettingsModal extends Modal {
 			id: "model-providers",
 			label: "Model Providers",
 			items: [
-				{ id: "anthropic", label: "Anthropic", icon: "bot" },
-				{ id: "openai",    label: "OpenAI",    icon: "sparkles" },
-				{ id: "gemini",    label: "Gemini",    icon: "gem" },
-				{ id: "mistral",   label: "Mistral",   icon: "wind" },
-				{ id: "ollama",    label: "Ollama",    icon: "cpu" },
+				{ id: "anthropic",    label: "Anthropic",    icon: "bot" },
+				{ id: "openai",       label: "OpenAI",       icon: "sparkles" },
+				{ id: "gemini",       label: "Gemini",       icon: "gem" },
+				{ id: "mistral",      label: "Mistral",      icon: "wind" },
+				{ id: "ollama",       label: "Ollama",       icon: "cpu" },
+			],
+		},
+		{
+			id: "features",
+			label: "Features",
+			items: [
+				{ id: "vault-search", label: "Vault Search", icon: "search" },
 			],
 		},
 	];
@@ -236,6 +244,7 @@ export class LLMSettingsModal extends Modal {
 			case "mistral":       this.renderMistral();     break;
 			case "ollama":        this.renderOllama();      break;
 			case "chat":          this.renderChat();         break;
+			case "vault-search":  this.renderVaultSearch();  break;
 		}
 	}
 
@@ -637,6 +646,157 @@ export class LLMSettingsModal extends Modal {
 		};
 
 		renderHistorySection();
+	}
+
+	private renderVaultSearch() {
+		const el = this.mainContentEl;
+		this.addTabHeader(el, "Vault Search");
+
+		// Enable toggle
+		const toggleItems = this.addSettingGroup(el);
+		new Setting(toggleItems)
+			.setName("Enable vault search (RAG)")
+			.setDesc(
+				"Index your vault and allow the AI to semantically search your notes. " +
+				"Tool-capable models (Claude, GPT-4, Gemini) use this automatically; " +
+				"other models get a manual toggle in the chat UI."
+			)
+			.addToggle((toggle) => {
+				toggle
+					.setValue(this.plugin.settings.ragSettings.enabled)
+					.onChange(async (value) => {
+						this.plugin.settings.ragSettings.enabled = value;
+						await this.plugin.saveSettings();
+						this.plugin.initVaultIndexer();
+						this.renderTab("vault-search");
+					});
+			});
+
+		if (!this.plugin.settings.ragSettings.enabled) return;
+
+		// Embedding configuration
+		const embeddingItems = this.addSettingGroup(el, "Embedding");
+
+		new Setting(embeddingItems)
+			.setName("Embedding provider")
+			.setDesc("Which provider to use for generating embeddings. Uses the API key you've already configured.")
+			.addDropdown((dropdown: DropdownComponent) => {
+				dropdown.addOption("openai", "OpenAI");
+				dropdown.addOption("gemini", "Gemini");
+				dropdown.addOption("ollama", "Ollama (local)");
+				dropdown.setValue(this.plugin.settings.ragSettings.embeddingProvider);
+				dropdown.onChange(async (value) => {
+					const provider = value as EmbeddingProvider;
+					this.plugin.settings.ragSettings.embeddingProvider = provider;
+					this.plugin.settings.ragSettings.embeddingModel = DEFAULT_EMBEDDING_MODELS[provider];
+					await this.plugin.saveSettings();
+					this.plugin.initVaultIndexer();
+					// Re-render to update the model field placeholder
+					this.renderTab("vault-search");
+				});
+			});
+
+		new Setting(embeddingItems)
+			.setName("Embedding model")
+			.setDesc(
+				`Model used to generate embeddings. Default: ${DEFAULT_EMBEDDING_MODELS[this.plugin.settings.ragSettings.embeddingProvider]}`
+			)
+			.addText((text) => {
+				text.setPlaceholder(DEFAULT_EMBEDDING_MODELS[this.plugin.settings.ragSettings.embeddingProvider]);
+				text.setValue(this.plugin.settings.ragSettings.embeddingModel);
+				text.onChange(async (value) => {
+					this.plugin.settings.ragSettings.embeddingModel = value.trim() ||
+						DEFAULT_EMBEDDING_MODELS[this.plugin.settings.ragSettings.embeddingProvider];
+					await this.plugin.saveSettings();
+					this.plugin.initVaultIndexer();
+				});
+			});
+
+		new Setting(embeddingItems)
+			.setName("Results per query")
+			.setDesc("How many note chunks to retrieve and inject as context (1–10).")
+			.addSlider((slider) => {
+				slider
+					.setLimits(1, 10, 1)
+					.setValue(this.plugin.settings.ragSettings.topK)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.ragSettings.topK = value;
+						await this.plugin.saveSettings();
+					});
+			});
+
+		// Indexing
+		const indexItems = this.addSettingGroup(el, "Indexing");
+
+		new Setting(indexItems)
+			.setName("Excluded folders")
+			.setDesc("Comma-separated vault-root folder paths to skip (e.g. Templates, Archive).")
+			.addText((text) => {
+				text.setPlaceholder("Templates, Archive");
+				text.setValue(this.plugin.settings.ragSettings.excludedFolders.join(", "));
+				text.onChange(async (value) => {
+					this.plugin.settings.ragSettings.excludedFolders = value
+						.split(",")
+						.map((s) => s.trim())
+						.filter(Boolean);
+					await this.plugin.saveSettings();
+				});
+			});
+
+		// Status display
+		const rag = this.plugin.settings.ragSettings;
+		const lastIndexedText = rag.lastIndexed
+			? `Last indexed: ${new Date(rag.lastIndexed).toLocaleString()} · ${rag.indexedFileCount} file(s)`
+			: "Not yet indexed.";
+
+		let indexButton: ButtonComponent;
+		const indexSetting = new Setting(indexItems)
+			.setName("Index vault")
+			.setDesc(lastIndexedText)
+			.addButton((button) => {
+				indexButton = button;
+				button.setButtonText("Index now");
+				button.setCta();
+				button.onClick(async () => {
+					if (!this.plugin.vaultIndexer) {
+						new Notice("Vault search is not configured. Check your embedding settings.");
+						return;
+					}
+					button.setButtonText("Indexing…");
+					button.setDisabled(true);
+					indexSetting.setDesc("Indexing your vault…");
+					try {
+						const { indexed, skipped } = await this.plugin.vaultIndexer.indexVault(
+							this.plugin.settings.ragSettings.excludedFolders,
+							({ indexed: done, total }) => {
+								indexSetting.setDesc(`Indexing… ${done}/${total} files`);
+							}
+						);
+						this.plugin.settings.ragSettings.lastIndexed = Date.now();
+						this.plugin.settings.ragSettings.indexedFileCount =
+							this.plugin.vaultIndexer.indexedFileCount;
+						await this.plugin.saveSettings();
+						new Notice(`✓ Vault indexed — ${indexed} updated, ${skipped} unchanged.`);
+						this.renderTab("vault-search");
+					} catch (e: any) {
+						if (e instanceof OllamaModelNotFoundError) {
+							new Notice(
+								`Ollama model "${e.model}" isn't pulled yet.\n\nRun this in your terminal:\n  ollama pull ${e.model}`,
+								10000
+							);
+							indexSetting.setDesc(
+								`Model not found. Run: ollama pull ${e.model}`
+							);
+						} else {
+							new Notice(`Indexing failed: ${e?.message ?? String(e)}`);
+							indexSetting.setDesc(lastIndexedText);
+						}
+						button.setButtonText("Index now");
+						button.setDisabled(false);
+					}
+				});
+			});
 	}
 
 	// ── Helpers ────────────────────────────────────────────────────────────────
