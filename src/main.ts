@@ -319,6 +319,10 @@ export default class LLMPlugin extends Plugin {
 					try {
 						await this.vaultIndexer!.indexFile(file as import("obsidian").TFile);
 						await this.vaultIndexer!.save();
+						this.settings.ragSettings.lastIndexed = Date.now();
+						this.settings.ragSettings.indexedFileCount = this.vaultIndexer!.indexedFileCount;
+						await this.saveSettings();
+						console.log("[RAG] Auto-reindexed:", path);
 					} catch (e) {
 						console.error("[RAG] Auto-reindex failed for", path, e);
 					}
@@ -340,9 +344,14 @@ export default class LLMPlugin extends Plugin {
 					this.ragDebounceTimers.delete(file.path);
 				}
 
-				this.vaultIndexer.removeFile(file.path).catch((e) => {
-					console.error("[RAG] Failed to remove deleted file from index:", file.path, e);
-				});
+				this.vaultIndexer.removeFile(file.path)
+					.then(async () => {
+						this.settings.ragSettings.indexedFileCount = this.vaultIndexer!.indexedFileCount;
+						await this.saveSettings();
+					})
+					.catch((e) => {
+						console.error("[RAG] Failed to remove deleted file from index:", file.path, e);
+					});
 			})
 		);
 
@@ -354,7 +363,12 @@ export default class LLMPlugin extends Plugin {
 				// Remove old path, re-index under new path
 				this.vaultIndexer.removeFile(oldPath).catch(() => {});
 				this.vaultIndexer.indexFile(file as import("obsidian").TFile)
-					.then(() => this.vaultIndexer!.save())
+					.then(async () => {
+						await this.vaultIndexer!.save();
+						this.settings.ragSettings.lastIndexed = Date.now();
+						this.settings.ragSettings.indexedFileCount = this.vaultIndexer!.indexedFileCount;
+						await this.saveSettings();
+					})
 					.catch((e) => console.error("[RAG] Failed to reindex renamed file:", e));
 			})
 		);
