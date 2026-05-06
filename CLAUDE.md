@@ -14,7 +14,7 @@ Output is bundled to `main.js` in the root directory.
 
 ## Architecture Overview
 
-This is an Obsidian plugin that provides LLM chat interfaces with support for OpenAI, Anthropic Claude, Google Gemini, Mistral AI, local Ollama, and local GPT4All.
+This is an Obsidian plugin that provides LLM chat interfaces with support for OpenAI, Anthropic Claude, Google Gemini, Mistral AI, local Ollama, local LM Studio, and local GPT4All.
 
 ### Entry Point and Plugin Lifecycle
 
@@ -87,7 +87,8 @@ Provider SDKs used:
 - `@anthropic-ai/sdk` - Claude models + Claude Code (agent SDK)
 - `@google/generative-ai` - Gemini models
 - Mistral — uses `openai` SDK with custom baseURL (`https://api.mistral.ai/v1`)
-- Ollama — uses `openai` SDK with custom baseURL (default `http://localhost:11434/v1`); models discovered dynamically
+- Ollama — uses `openai` SDK with custom baseURL (default `http://localhost:11434/v1`); models discovered dynamically via `/api/tags`
+- LM Studio — uses `openai` SDK with custom baseURL (default `http://localhost:1234/v1`); models discovered dynamically via `/v1/models`; no real API key required (uses `"lm-studio"` as placeholder)
 - GPT4All connects to local server on port 4891
 
 ### RAG / Vault Search
@@ -122,7 +123,7 @@ The plugin supports semantic search over the user's vault via three classes in `
 
 ### Constants Convention
 
-All endpoint type strings live in `src/utils/constants.ts` and must be imported as constants rather than compared against raw string literals. The full set of endpoint constants is: `chat`, `messages`, `images`, `claudeCodeEndpoint`. Provider type constants are: `openAI`, `claude`, `claudeCode`, `gemini`, `mistral`, `ollama`, `GPT4All`.
+All endpoint type strings live in `src/utils/constants.ts` and must be imported as constants rather than compared against raw string literals. The full set of endpoint constants is: `chat`, `messages`, `images`, `claudeCodeEndpoint`. Provider type constants are: `openAI`, `claude`, `claudeCode`, `gemini`, `mistral`, `ollama`, `lmStudio`, `GPT4All`.
 
 ### CSS / Styling Convention
 

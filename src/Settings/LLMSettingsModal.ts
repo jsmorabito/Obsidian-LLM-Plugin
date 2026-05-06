@@ -8,9 +8,9 @@ import {
 	Setting,
 	setIcon,
 } from "obsidian";
-import { changeDefaultModel, fetchOllamaModels, getGpt4AllPath } from "utils/utils";
-import { buildOllamaModels, modelNames, models } from "utils/models";
-import { GPT4All, ollama } from "utils/constants";
+import { changeDefaultModel, fetchOllamaModels, fetchLMStudioModels, getGpt4AllPath } from "utils/utils";
+import { buildOllamaModels, buildLMStudioModels, modelNames, models } from "utils/models";
+import { GPT4All, ollama, lmStudio } from "utils/constants";
 import { FAB } from "Plugin/FAB/FAB";
 import { ChatModal2 } from "Plugin/Modal/ChatModal2";
 import { DEFAULT_EMBEDDING_MODELS, EmbeddingProvider, OllamaModelNotFoundError } from "RAG/EmbeddingService";
@@ -88,6 +88,7 @@ export class LLMSettingsModal extends Modal {
 				{ id: "gemini",       label: "Gemini",       icon: "gem" },
 				{ id: "mistral",      label: "Mistral",      icon: "wind" },
 				{ id: "ollama",       label: "Ollama",       icon: "cpu" },
+				{ id: "lmstudio",     label: "LM Studio",   icon: "monitor" },
 			],
 		},
 		{
@@ -243,6 +244,7 @@ export class LLMSettingsModal extends Modal {
 			case "gemini":        this.renderGemini();      break;
 			case "mistral":       this.renderMistral();     break;
 			case "ollama":        this.renderOllama();      break;
+			case "lmstudio":      this.renderLMStudio();    break;
 			case "chat":          this.renderChat();         break;
 			case "vault-search":  this.renderVaultSearch();  break;
 		}
@@ -261,8 +263,9 @@ export class LLMSettingsModal extends Modal {
 			.setDesc("Sets the default LLM used across the plugin.")
 			.addDropdown((dropdown: DropdownComponent) => {
 				const ollamaBuilt = buildOllamaModels(this.plugin.settings.ollamaModels);
-				const allModels = { ...models, ...ollamaBuilt.models };
-				const allModelNames = { ...modelNames, ...ollamaBuilt.names };
+				const lmStudioBuilt = buildLMStudioModels(this.plugin.settings.lmStudioModels);
+				const allModels = { ...models, ...ollamaBuilt.models, ...lmStudioBuilt.models };
+				const allModelNames = { ...modelNames, ...ollamaBuilt.names, ...lmStudioBuilt.names };
 
 				dropdown.addOption(
 					modelNames[this.plugin.settings.defaultModel] ?? "",
@@ -271,7 +274,7 @@ export class LLMSettingsModal extends Modal {
 
 				for (const model of Object.keys(allModels)) {
 					const type = allModels[model].type;
-					if (type === ollama) {
+					if (type === ollama || type === lmStudio) {
 						dropdown.addOption(allModels[model].model, model);
 						continue;
 					}
@@ -287,7 +290,7 @@ export class LLMSettingsModal extends Modal {
 
 				dropdown.onChange((change) => {
 					const name = allModelNames[change];
-					if (name && allModels[name]?.type === ollama) {
+					if (name && (allModels[name]?.type === ollama || allModels[name]?.type === lmStudio)) {
 						models[name] = allModels[name];
 						modelNames[change] = name;
 					}
@@ -545,6 +548,62 @@ export class LLMSettingsModal extends Modal {
 			});
 	}
 
+	private renderLMStudio() {
+		const el = this.mainContentEl;
+		this.addTabHeader(el, "LM Studio");
+		const items = this.addSettingGroup(el);
+
+		new Setting(items)
+			.setName("LM Studio host")
+			.setDesc("URL of your LM Studio server (default: http://localhost:1234).")
+			.addText((text) => {
+				text.setPlaceholder("http://localhost:1234");
+				text.setValue(this.plugin.settings.lmStudioHost);
+				text.onChange((value) => {
+					this.plugin.settings.lmStudioHost = value;
+					this.plugin.saveSettings();
+				});
+			});
+
+		// Discovered models list
+		const modelListEl = items.createEl("p", {
+			cls: "setting-item-description llm-settings-ollama-models",
+		});
+		if (this.plugin.settings.lmStudioModels.length > 0) {
+			modelListEl.setText(
+				`Discovered models: ${this.plugin.settings.lmStudioModels.join(", ")}`
+			);
+		}
+
+		new Setting(items)
+			.setName("Refresh models")
+			.setDesc("Fetch available models from your LM Studio server.")
+			.addButton((button) => {
+				button.setButtonText("Refresh");
+				button.onClick(async () => {
+					try {
+						button.setButtonText("Fetching...");
+						button.setDisabled(true);
+						const foundModels = await fetchLMStudioModels(
+							this.plugin.settings.lmStudioHost
+						);
+						this.plugin.settings.lmStudioModels = foundModels;
+						const built = buildLMStudioModels(foundModels);
+						Object.assign(models, built.models);
+						Object.assign(modelNames, built.names);
+						await this.plugin.saveSettings();
+						this.renderTab("lmstudio");
+					} catch {
+						modelListEl.setText(
+							"Failed to connect to LM Studio. Is the local server running?"
+						);
+						button.setButtonText("Refresh");
+						button.setDisabled(false);
+					}
+				});
+			});
+	}
+
 	private renderChat() {
 		const el = this.mainContentEl;
 		this.addTabHeader(el, "Chat");
@@ -684,6 +743,7 @@ export class LLMSettingsModal extends Modal {
 				dropdown.addOption("openai", "OpenAI");
 				dropdown.addOption("gemini", "Gemini");
 				dropdown.addOption("ollama", "Ollama (local)");
+				dropdown.addOption("lmStudio", "LM Studio (local)");
 				dropdown.setValue(this.plugin.settings.ragSettings.embeddingProvider);
 				dropdown.onChange(async (value) => {
 					const provider = value as EmbeddingProvider;
