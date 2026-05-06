@@ -47,6 +47,13 @@ Each view composes these shared components from `src/Plugin/Components/`:
 - **HistoryHandler** (`src/History/HistoryHandler.ts`) - Manages chat history (max 10 conversations)
 - **AssistantHandler** (`src/Assistants/AssistantHandler.ts`) - OpenAI assistants state
 
+#### Scan-button context locking (`activeFileForChip`)
+
+`ChatContainer.activeFileForChip` is `{ name: string; path: string } | null`. When the user activates the scan button, the file's **path** is stored at that moment and held for the life of the conversation. Two invariants must be preserved:
+
+1. **Send time reads the stored path, not `getActiveFile()`** — the `useActiveFileContext` block in `handleGenerateClick` resolves the file via `activeFileForChip.path` (falling back to `getActiveFile()` only when no chip is set). Do not revert this to a bare `getActiveFile()` call, or switching tabs mid-task will silently swap the injected context.
+2. **`refreshActiveFileChip()` is a no-op mid-conversation** — it guards on `this.getMessages().length > 0` and returns early, so opening the popover on a different note doesn't re-point the chip. The chip only auto-updates when the chat is empty (before the first send) or after `newChat()` resets state.
+
 ### Message Flow
 
 1. User input in `ChatContainer` triggers `handleGenerateClick()`
@@ -54,6 +61,18 @@ Each view composes these shared components from `src/Plugin/Components/`:
 3. API call made based on selected provider (OpenAI/Claude/Gemini/Mistral/Ollama/GPT4All)
 4. Streaming response updates UI in real-time
 5. Conversation saved to History
+
+#### Render generation guard (`renderGeneration`)
+
+`updateMessages` (the MessageStore subscriber) re-renders the full message list by calling `resetChat()` then `generateIMLikeMessages()`. Because `generateIMLikeMessages` is async (it `await`s `renderMarkdown` inside each `createMessage` call), a stale render can continue appending DOM nodes into a container that has already been cleared by a newer render, producing duplicated or out-of-order messages.
+
+To prevent this, `ChatContainer` maintains a `renderGeneration` counter. `updateMessages` increments it and passes the new value to `generateIMLikeMessages`. The render function checks `gen !== this.renderGeneration` before each message and before the final scroll — if it no longer holds the latest generation it returns immediately.
+
+**Do not remove this guard or make `generateIMLikeMessages` synchronous without understanding this invariant.** The race is subtle: it only manifests when the user sends a second message quickly (or when the store is updated programmatically in quick succession), so it is easy to miss in manual testing.
+
+#### `MessageStore.setMessages` copies the input array
+
+`setMessages` stores a shallow copy (`[...messages]`) rather than the direct reference. This prevents subsequent `addMessage` pushes from mutating the caller's array — notably `promptHistory[n].messages` in the legacy array-based history path.
 
 ### Platform Abstraction
 

@@ -114,7 +114,7 @@ export class ChatContainer {
 	chipContainer: HTMLElement | null = null;
 	addFilesButton: ButtonComponent | null = null;
 	scanButton: ButtonComponent | null = null;
-	activeFileForChip: { name: string } | null = null;
+	activeFileForChip: { name: string; path: string } | null = null;
 	/** Stored so StatusBarButton (and FAB) can re-sync the displayed model after settings change. */
 	private modelDropdown: DropdownComponent | null = null;
 
@@ -678,15 +678,21 @@ export class ChatContainer {
 		// Active file context toggle (explicit user action via scan button)
 		if (this.useActiveFileContext && modelEndpoint !== images) {
 			try {
-				const activeFile = this.plugin.app.workspace.getActiveFile();
-				if (activeFile) {
-					const content = await this.plugin.app.vault.read(activeFile);
+				// Use the path locked when the user activated context, NOT the current
+				// active file. This prevents switching documents mid-task from silently
+				// swapping the context out from under the conversation.
+				const lockedPath = this.activeFileForChip?.path;
+				const contextFile = lockedPath
+					? (this.plugin.app.vault.getAbstractFileByPath(lockedPath) as import("obsidian").TFile | null)
+					: this.plugin.app.workspace.getActiveFile();
+				if (contextFile) {
+					const content = await this.plugin.app.vault.read(contextFile);
 					const activeFileContextString =
-						`# Active File: ${activeFile.name}\nPath: \`${activeFile.path}\`\n\n\`\`\`\n${content}\n\`\`\`\n`;
+						`# Active File: ${contextFile.name}\nPath: \`${contextFile.path}\`\n\n\`\`\`\n${content}\n\`\`\`\n`;
 					// Override any previously built context string — explicit toggle wins
 					this.pendingContextString = activeFileContextString;
 					this.currentVaultContext = {
-						activeFile: { path: activeFile.path, name: activeFile.name, content },
+						activeFile: { path: contextFile.path, name: contextFile.name, content },
 						additionalFiles: [],
 					};
 				}
@@ -1404,7 +1410,7 @@ export class ChatContainer {
 				if (this.useActiveFileContext) {
 					const activeFile = this.plugin.app.workspace.getActiveFile();
 					if (activeFile) {
-						this.activeFileForChip = { name: activeFile.name };
+						this.activeFileForChip = { name: activeFile.name, path: activeFile.path };
 						this.scanButton!.buttonEl.addClass("is-active");
 						this.syncChips();
 					} else {
@@ -1516,7 +1522,7 @@ export class ChatContainer {
 			const activeFile = this.plugin.app.workspace.getActiveFile();
 			if (activeFile) {
 				this.useActiveFileContext = true;
-				this.activeFileForChip = { name: activeFile.name };
+				this.activeFileForChip = { name: activeFile.name, path: activeFile.path };
 				this.scanButton?.buttonEl.addClass("is-active");
 			}
 		}
@@ -1826,11 +1832,17 @@ export class ChatContainer {
 		const includeActiveFile =
 			this.plugin.settings[settingType].contextSettings.includeActiveFile;
 
+		const hasConversation = this.getMessages().length > 0;
+
 		if (this.useActiveFileContext) {
+			// Mid-conversation: the user pointed at a file deliberately — keep it.
+			// Only swap if no messages exist yet (chat hasn't started).
+			if (hasConversation) return;
+
 			// Context is on — update to the currently active file.
 			const activeFile = this.plugin.app.workspace.getActiveFile();
 			if (activeFile) {
-				this.activeFileForChip = { name: activeFile.name };
+				this.activeFileForChip = { name: activeFile.name, path: activeFile.path };
 			} else {
 				// No file open any more — turn the chip off cleanly.
 				this.activeFileForChip = null;
@@ -1838,13 +1850,14 @@ export class ChatContainer {
 				this.scanButton?.buttonEl.removeClass("is-active");
 			}
 			this.syncChips();
-		} else if (includeActiveFile && !this.activeFileForChip) {
+		} else if (includeActiveFile && !this.activeFileForChip && !hasConversation) {
 			// Context was never activated because no file was open at build
-			// time. Try again now that the popover is being shown.
+			// time. Try again now that the popover is being shown — but only
+			// if the conversation hasn't started yet.
 			const activeFile = this.plugin.app.workspace.getActiveFile();
 			if (activeFile) {
 				this.useActiveFileContext = true;
-				this.activeFileForChip = { name: activeFile.name };
+				this.activeFileForChip = { name: activeFile.name, path: activeFile.path };
 				this.scanButton?.buttonEl.addClass("is-active");
 				this.syncChips();
 			}
@@ -1923,7 +1936,7 @@ export class ChatContainer {
 			const activeFile = this.plugin.app.workspace.getActiveFile();
 			if (activeFile) {
 				this.useActiveFileContext = true;
-				this.activeFileForChip = { name: activeFile.name };
+				this.activeFileForChip = { name: activeFile.name, path: activeFile.path };
 				this.scanButton?.buttonEl.addClass("is-active");
 			}
 		}
