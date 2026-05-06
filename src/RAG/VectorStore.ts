@@ -17,19 +17,18 @@ interface IndexFile {
 }
 
 const INDEX_VERSION = 1;
-const INDEX_PATH = ".obsidian/plugins/Obsidian-LLM-Plugin/rag-index.json";
 
 export class VectorStore {
 	private entries: Map<string, VectorEntry> = new Map();
 	private dirty = false;
 
-	constructor(private app: App) {}
+	constructor(private app: App, private indexPath: string) {}
 
 	// ── Persistence ──────────────────────────────────────────────────────────
 
 	async load(): Promise<void> {
 		try {
-			const raw = await this.app.vault.adapter.read(INDEX_PATH);
+			const raw = await this.app.vault.adapter.read(this.indexPath);
 			const parsed: IndexFile = JSON.parse(raw);
 			if (parsed.version !== INDEX_VERSION) {
 				console.warn("[RAG] Index version mismatch — rebuilding");
@@ -52,7 +51,7 @@ export class VectorStore {
 			version: INDEX_VERSION,
 			entries: Array.from(this.entries.values()),
 		};
-		await this.app.vault.adapter.write(INDEX_PATH, JSON.stringify(data));
+		await this.app.vault.adapter.write(this.indexPath, JSON.stringify(data));
 		this.dirty = false;
 	}
 

@@ -391,7 +391,8 @@ export default class LLMPlugin extends Plugin {
 			geminiKey: this.settings.geminiAPIKey,
 			ollamaHost: this.settings.ollamaHost,
 		});
-		const store = new VectorStore(this.app);
+		const indexPath = `${this.manifest.dir}/rag-index.json`;
+		const store = new VectorStore(this.app, indexPath);
 		this.vaultIndexer = new VaultIndexer(this.app, store, embeddingService);
 	}
 
