@@ -690,12 +690,20 @@ export class ChatContainer {
 		const hasExplicitFileContext = (contextSettings.selectedFiles?.length ?? 0) > 0;
 		if (modelEndpoint !== images && (this.plugin.settings.enableFileContext || hasExplicitFileContext)) {
 			try {
+				// useActiveFileContext is the single source of truth for whether the
+				// active file is included. The saved setting controls the initial state
+				// of useActiveFileContext, but the scan button can override it — so we
+				// pass that flag here rather than the raw setting value.
+				const effectiveContextSettings = {
+					...contextSettings,
+					includeActiveFile: this.useActiveFileContext,
+				};
 				contextString = await this.contextBuilder.buildFormattedContext(
-					contextSettings,
+					effectiveContextSettings,
 					contextTokenBudget
 				);
 				if (contextString) {
-					vaultContext = await this.contextBuilder.buildContext(contextSettings);
+					vaultContext = await this.contextBuilder.buildContext(effectiveContextSettings);
 					// Store for use in historyPush
 					this.currentVaultContext = vaultContext;
 					// Store context string to be injected into API params (not rendered in UI)
@@ -762,7 +770,9 @@ export class ChatContainer {
 
 		// For agent mode: prepend a hint that identifies the active/context file(s)
 		// so the model knows which file to act on when the user says "this page", etc.
-		if (this.supportsAgentMode(modelType) && modelEndpoint !== images) {
+		// Only inject when the user has active-file context enabled — otherwise agent
+		// models will autonomously read the file even though the user turned it off.
+		if (this.supportsAgentMode(modelType) && modelEndpoint !== images && this.useActiveFileContext) {
 			const activeFile = this.plugin.app.workspace.getActiveFile();
 			if (activeFile || this.pendingContextString) {
 				const activeHint = activeFile
