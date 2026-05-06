@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { GoogleGenAI } from "@google/genai";
 
-export type EmbeddingProvider = "openai" | "gemini" | "ollama";
+export type EmbeddingProvider = "openai" | "gemini" | "ollama" | "lmStudio";
 
 export interface EmbeddingConfig {
 	provider: EmbeddingProvider;
@@ -12,12 +12,15 @@ export interface EmbeddingConfig {
 	geminiKey?: string;
 	/** Ollama host URL, e.g. "http://localhost:11434" (used when provider === "ollama") */
 	ollamaHost?: string;
+	/** LM Studio host URL, e.g. "http://localhost:1234" (used when provider === "lmStudio") */
+	lmStudioHost?: string;
 }
 
 export const DEFAULT_EMBEDDING_MODELS: Record<EmbeddingProvider, string> = {
 	openai: "text-embedding-3-small",
 	gemini: "text-embedding-004",
 	ollama: "nomic-embed-text",
+	lmStudio: "nomic-embed-text",
 };
 
 export class EmbeddingService {
@@ -33,6 +36,8 @@ export class EmbeddingService {
 				return this.embedGemini(text, model);
 			case "ollama":
 				return this.embedOllama(text, model);
+			case "lmStudio":
+				return this.embedLMStudio(text, model);
 			default:
 				throw new Error(`[RAG] Unknown embedding provider: ${provider}`);
 		}
@@ -108,6 +113,22 @@ export class EmbeddingService {
 			}
 			throw e;
 		}
+	}
+
+	// ── LM Studio ────────────────────────────────────────────────────────────
+
+	private async embedLMStudio(text: string, model: string): Promise<number[]> {
+		const host = this.config.lmStudioHost ?? "http://localhost:1234";
+		// LM Studio exposes a fully OpenAI-compatible /v1/embeddings endpoint
+		const client = new OpenAI({
+			apiKey: "lm-studio",
+			baseURL: `${host}/v1`,
+			dangerouslyAllowBrowser: true,
+		});
+		const response = await client.embeddings.create({ model, input: text });
+		const embedding = response.data[0]?.embedding;
+		if (!embedding) throw new Error("[RAG] LM Studio returned no embedding");
+		return embedding;
 	}
 
 	/**

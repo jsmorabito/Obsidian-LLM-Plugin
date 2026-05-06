@@ -1,5 +1,5 @@
 import { Model } from "Types/types";
-import { claude, claudeCode, claudeCodeEndpoint, chat, gemini, gemini2FlashStableModel, gemini2FlashLiteModel, gemini25ProModel, gemini25FlashModel, gemini25FlashLiteModel, gemini3ProPreviewModel, geminiFlashLatestModel, geminiFlashLiteLatestModel, GPT4All, images, messages, ollama, mistral, claudeSonnet46Model, claudeOpus46Model, claudeHaiku45Model } from "utils/constants"
+import { claude, claudeCode, claudeCodeEndpoint, chat, gemini, gemini2FlashStableModel, gemini2FlashLiteModel, gemini25ProModel, gemini25FlashModel, gemini25FlashLiteModel, gemini3ProPreviewModel, geminiFlashLatestModel, geminiFlashLiteLatestModel, GPT4All, images, messages, ollama, lmStudio, mistral, claudeSonnet46Model, claudeOpus46Model, claudeHaiku45Model } from "utils/constants"
 
 export const openAIModels: Record<string, Model> = {
 	"ChatGPT-3.5 turbo": {
@@ -331,4 +331,20 @@ export function buildOllamaModels(ollamaModelNames: string[]): { models: Record<
 		ollamaNames[name] = displayName;
 	}
 	return { models: ollamaModels, names: ollamaNames };
+}
+
+export function buildLMStudioModels(lmStudioModelNames: string[]): { models: Record<string, Model>, names: Record<string, string> } {
+	const lmStudioModels: Record<string, Model> = {};
+	const lmStudioNames: Record<string, string> = {};
+	for (const name of lmStudioModelNames) {
+		const displayName = `LM Studio: ${name}`;
+		lmStudioModels[displayName] = {
+			model: name,
+			type: lmStudio,
+			endpoint: chat,
+			url: "/v1/chat/completions",
+		};
+		lmStudioNames[name] = displayName;
+	}
+	return { models: lmStudioModels, names: lmStudioNames };
 }

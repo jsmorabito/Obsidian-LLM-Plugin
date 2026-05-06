@@ -1,6 +1,6 @@
 import { Notice, TFile, parseYaml } from "obsidian";
 import LLMPlugin from "main";
-import { ChatHistoryItem, HistoryItem, Message, VaultContext } from "Types/types";
+import { ChatHistoryItem, HistoryItem, Message, ToolCallRecord, VaultContext } from "Types/types";
 
 export interface ChatFileMeta {
 	type: "Chat";
@@ -92,8 +92,13 @@ export class ChatHistory {
 	}
 
 	/** Render messages + optional selected-text callout as markdown. */
-	private messagesToMarkdown(messages: Message[], selectedText?: string): string {
+	private messagesToMarkdown(
+		messages: Message[],
+		selectedText?: string,
+		toolCallsByTurn?: Map<number, ToolCallRecord[]>
+	): string {
 		let body = "";
+		let assistantIdx = 0;
 
 		if (selectedText?.trim()) {
 			body += `> [!quote] Selected text\n`;
@@ -106,11 +111,35 @@ export class ChatHistory {
 
 		for (const msg of messages) {
 			if (msg.role === "system") continue;
-			const heading = msg.role === "user" ? "## User" : "## Assistant";
-			body += `${heading}\n\n${msg.content}\n\n`;
+			if (msg.role === "assistant") {
+				body += `## Assistant\n\n`;
+				const toolCalls = toolCallsByTurn?.get(assistantIdx);
+				if (toolCalls?.length) {
+					body += this.renderToolCallBlock(toolCalls);
+				}
+				body += `${msg.content}\n\n`;
+				assistantIdx++;
+			} else {
+				body += `## User\n\n${msg.content}\n\n`;
+			}
 		}
 
 		return body.trimEnd();
+	}
+
+	/** Render a collapsible callout listing the tool calls for one agent turn. */
+	private renderToolCallBlock(toolCalls: ToolCallRecord[]): string {
+		const count = toolCalls.length;
+		const label = count === 1 ? "1 tool call" : `${count} tool calls`;
+		let block = `> [!info]- ${label}\n`;
+		for (const tc of toolCalls) {
+			const inputStr = JSON.stringify(tc.input);
+			const truncated =
+				inputStr.length > 300 ? inputStr.slice(0, 297) + "…" : inputStr;
+			block += `>\n> **${tc.name}**\n> \`${truncated}\`\n`;
+		}
+		block += "\n";
+		return block;
 	}
 
 	/** Parse messages (and optional selected text) from a markdown body. */
@@ -141,7 +170,14 @@ export class ChatHistory {
 		// then pairs: [heading label, content, heading label, content …]
 		for (let i = 1; i < parts.length; i += 2) {
 			const role = parts[i] === "User" ? "user" : "assistant";
-			const content = (parts[i + 1] ?? "").trim();
+			let content = (parts[i + 1] ?? "").trim();
+			// Strip any leading tool-call callout blocks (written by renderToolCallBlock)
+			// so they don't pollute re-submitted conversation context.
+			if (role === "assistant") {
+				content = content
+					.replace(/^> \[!info\]-? \d+ tool calls?\n(?:>[ \t]?[^\n]*\n)*\n?/, "")
+					.trim();
+			}
 			if (content) messages.push({ role, content });
 		}
 
@@ -152,10 +188,11 @@ export class ChatHistory {
 	private buildFileContent(
 		meta: ChatFileMeta,
 		messages: Message[],
-		selectedText?: string
+		selectedText?: string,
+		toolCallsByTurn?: Map<number, ToolCallRecord[]>
 	): string {
 		const fm = this.buildFrontmatter(meta);
-		const body = this.messagesToMarkdown(messages, selectedText);
+		const body = this.messagesToMarkdown(messages, selectedText, toolCallsByTurn);
 		return `---\n${fm}\n---\n\n${body}`;
 	}
 
@@ -172,7 +209,8 @@ export class ChatHistory {
 		title: string,
 		messages: Message[],
 		item: ChatHistoryItem,
-		vaultContext?: VaultContext
+		vaultContext?: VaultContext,
+		toolCallsByTurn?: Map<number, ToolCallRecord[]>
 	): Promise<string> {
 		await this.ensureFolder();
 
@@ -194,7 +232,7 @@ export class ChatHistory {
 			};
 			await this.plugin.app.vault.modify(
 				file,
-				this.buildFileContent(meta, messages, selectedText)
+				this.buildFileContent(meta, messages, selectedText, toolCallsByTurn)
 			);
 			return filePath;
 		} else {
@@ -213,7 +251,7 @@ export class ChatHistory {
 			};
 			await this.plugin.app.vault.create(
 				newPath,
-				this.buildFileContent(meta, messages, selectedText)
+				this.buildFileContent(meta, messages, selectedText, toolCallsByTurn)
 			);
 			return newPath;
 		}

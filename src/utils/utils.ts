@@ -119,6 +119,16 @@ export async function fetchOllamaModels(host: string): Promise<string[]> {
 	return (response.models || []).map((m: any) => m.name as string);
 }
 
+/** Fetches the list of models currently loaded in LM Studio via its OpenAI-compatible /v1/models endpoint. */
+export async function fetchLMStudioModels(host: string): Promise<string[]> {
+	const request = {
+		url: `${host}/v1/models`,
+		method: "GET",
+	} as RequestUrlParam;
+	const response = await requestUrl(request).then((res) => res.json);
+	return (response.data || []).map((m: any) => m.id as string);
+}
+
 export async function ollamaMessage(params: ChatParams, host: string) {
 	const openai = new OpenAI({
 		apiKey: "ollama",

@@ -12,7 +12,9 @@ export class MessageStore {
 	}
 
 	setMessages(messages: Message[]) {
-		this.messages = messages;
+		// Store a shallow copy so that subsequent addMessage pushes do not
+		// mutate the caller's array (e.g. promptHistory[n].messages).
+		this.messages = [...messages];
 	}
 
 	getMessages(): Message[] {

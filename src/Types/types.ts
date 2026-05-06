@@ -98,6 +98,13 @@ export type PermissionMode =
 /** Risk level assigned to each tool in ObsidianToolRegistry. */
 export type RiskTier = "safe" | "write" | "danger";
 
+/** A single tool call made by the agent during a conversation turn. */
+export type ToolCallRecord = {
+	name: string;
+	input: Record<string, any>;
+	result?: string;
+};
+
 export type AgentSettings = {
 	permissionMode: PermissionMode;
 };
