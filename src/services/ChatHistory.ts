@@ -131,7 +131,7 @@ export class ChatHistory {
 	private renderToolCallBlock(toolCalls: ToolCallRecord[]): string {
 		const count = toolCalls.length;
 		const label = count === 1 ? "1 tool call" : `${count} tool calls`;
-		let block = `> [!tool-use]- 🔧 ${label}\n`;
+		let block = `> [!info]- ${label}\n`;
 		for (const tc of toolCalls) {
 			const inputStr = JSON.stringify(tc.input);
 			const truncated =
@@ -175,7 +175,7 @@ export class ChatHistory {
 			// so they don't pollute re-submitted conversation context.
 			if (role === "assistant") {
 				content = content
-					.replace(/^> \[!tool-use\][^\n]*\n(?:>[ \t]?[^\n]*\n)*\n?/, "")
+					.replace(/^> \[!info\]-? \d+ tool calls?\n(?:>[ \t]?[^\n]*\n)*\n?/, "")
 					.trim();
 			}
 			if (content) messages.push({ role, content });
