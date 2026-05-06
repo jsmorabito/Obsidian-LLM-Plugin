@@ -105,6 +105,8 @@ export class ChatContainer {
 	private pendingRagSources: string[] = [];
 	/** Resolves when the most recent generateIMLikeMessages render is complete. */
 	private renderingPromise: Promise<void> = Promise.resolve();
+	/** Incremented each time a new render starts; stale renders compare against this and abort. */
+	private renderGeneration = 0;
 	/** Tracks the file path for the currently active chat file (file-based history only). Cleared on new chat. */
 	currentHistoryFilePath: string | null = null;
 	/** Optional callback set by the FAB header to sync the title display. */
@@ -156,10 +158,15 @@ export class ChatContainer {
 		// Each view has its own store, so the messages passed here are always
 		// the right ones for this view — no cross-view filtering needed.
 		this.resetChat();
+		// Stamp a new generation so any in-flight render from a previous call
+		// can detect it has been superseded and abort. Without this, stale async
+		// renders continue appending DOM nodes after resetChat() has cleared the
+		// container, causing duplicated or out-of-order messages.
+		const gen = ++this.renderGeneration;
 		// Store the promise so handleGenerateClick can await it before appending
 		// the streaming/thinking div. Without this, setDiv() races with the async
 		// message render and the thinking animation lands above the user message.
-		this.renderingPromise = this.generateIMLikeMessages(messages);
+		this.renderingPromise = this.generateIMLikeMessages(messages, gen);
 	}
 
 	getMessages() {
@@ -1753,9 +1760,15 @@ export class ChatContainer {
 		}
 	}
 
-	async generateIMLikeMessages(messages: Message[]) {
+	async generateIMLikeMessages(messages: Message[], gen?: number) {
 		let finalMessage = false;
 		for (let index = 0; index < messages.length; index++) {
+			// Abort if a newer render has been kicked off since this one started.
+			// Each await inside createMessage (e.g. renderMarkdown) is a yield
+			// point where updateMessages may have already called resetChat() and
+			// started a fresh render. Continuing would write stale nodes into
+			// the newly-cleared container, causing duplicated / out-of-order UI.
+			if (gen !== undefined && gen !== this.renderGeneration) return;
 			const { role, content } = messages[index];
 			if (index === messages.length - 1) finalMessage = true;
 			if (role === "assistant") {
@@ -1764,6 +1777,7 @@ export class ChatContainer {
 				await this.createMessage(content, index, finalMessage);
 			}
 		}
+		if (gen !== undefined && gen !== this.renderGeneration) return;
 		this.historyMessages.scroll(0, 9999);
 	}
 
