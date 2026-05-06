@@ -1646,6 +1646,11 @@ export class ChatContainer {
 	 * URLs (containing ://).
 	 */
 	private linkifyMdRefs(text: string): string {
+		// LLMs (especially smaller models) often wrap wiki-links in backticks:
+		// `[[filename.md]]` → [[filename.md]]
+		// Strip backtick wrapping so MarkdownRenderer treats them as real links.
+		text = text.replace(/`(\[\[.*?\]\])`/g, "$1");
+
 		// Negative lookbehind: don't match if preceded by [, (, or /
 		// (catches [[already]], (url), and http://path/file.md).
 		// Negative lookahead:  don't match if followed by ] or )
