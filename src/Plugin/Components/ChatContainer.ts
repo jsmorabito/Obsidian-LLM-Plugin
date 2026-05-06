@@ -17,6 +17,7 @@ import {
 	ImageHistoryItem,
 	ImageParams,
 	Message,
+	ToolCallRecord,
 	ViewType,
 } from "Types/types";
 import { classNames } from "utils/classNames";
@@ -103,6 +104,14 @@ export class ChatContainer {
 	useVaultSearch: boolean = false;
 	/** File paths retrieved by vault search for the current generation — cleared after appending sources panel. */
 	private pendingRagSources: string[] = [];
+	/** Tool calls accumulated during the current agent turn — committed to allToolCallsByTurn at turn end. */
+	private pendingToolCalls: ToolCallRecord[] = [];
+	/**
+	 * Tool calls indexed by assistant-message turn (0-based).
+	 * Entry i holds all tool calls made before the i-th assistant response.
+	 * Cleared on newChat().
+	 */
+	private allToolCallsByTurn: Map<number, ToolCallRecord[]> = new Map();
 	/** Resolves when the most recent generateIMLikeMessages render is complete. */
 	private renderingPromise: Promise<void> = Promise.resolve();
 	/** Incremented each time a new render starts; stale renders compare against this and abort. */
@@ -910,6 +919,11 @@ export class ChatContainer {
 		const permissionMode =
 			this.plugin.settings[settingType].agentSettings?.permissionMode ?? "ask";
 
+		// Capture the current assistant-message count to use as the turn index.
+		// Tool calls accumulated this turn will be associated with this index.
+		const turnIndex = this.getMessages().filter((m) => m.role === assistant).length;
+		this.pendingToolCalls = [];
+
 		const agentLoop = new AgentLoop(
 			this.plugin.app,
 			permissionMode,
@@ -937,6 +951,7 @@ export class ChatContainer {
 				this.showThinkingAnimation();
 			},
 			onToolResult: (toolName, input, result) => {
+				// Track for RAG sources panel
 				if (toolName === "search_vault_semantic") {
 					// Extract ### file/path.md headers from the formatted result block
 					const paths = extractRagSourcePaths(result);
@@ -949,6 +964,8 @@ export class ChatContainer {
 						this.pendingRagSources.push(input.path);
 					}
 				}
+				// Record the tool call for chat file history
+				this.pendingToolCalls.push({ name: toolName, input, result });
 			},
 		};
 
@@ -968,6 +985,12 @@ export class ChatContainer {
 		await this.renderMarkdown(this.previewText, this.streamingDiv);
 
 		this.messageStore.addMessage({ role: assistant, content: this.previewText });
+
+		// Commit tool calls for this turn before saving to history
+		if (this.pendingToolCalls.length > 0) {
+			this.allToolCallsByTurn.set(turnIndex, [...this.pendingToolCalls]);
+			this.pendingToolCalls = [];
+		}
 
 		const messageContext = {
 			...(params as ChatParams),
@@ -1063,7 +1086,8 @@ export class ChatContainer {
 				"", // title unused on update
 				messages,
 				params,
-				vaultContext
+				vaultContext,
+				this.allToolCallsByTurn.size > 0 ? this.allToolCallsByTurn : undefined
 			);
 			return;
 		}
@@ -1095,7 +1119,8 @@ export class ChatContainer {
 			title,
 			messages,
 			params,
-			vaultContext
+			vaultContext,
+			this.allToolCallsByTurn.size > 0 ? this.allToolCallsByTurn : undefined
 		);
 
 		this.currentHistoryFilePath = filePath;
@@ -1920,6 +1945,8 @@ export class ChatContainer {
 	newChat() {
 		this.historyMessages.empty();
 		this.claudeCodeSessionId = null;
+		this.pendingToolCalls = [];
+		this.allToolCallsByTurn = new Map();
 		this.displayNoChatView(this.historyMessages);
 
 		// Reset active file chip state, then re-evaluate from the current setting.
