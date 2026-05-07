@@ -17,6 +17,7 @@ import {
 	ImageHistoryItem,
 	ImageParams,
 	Message,
+	ToolCallRecord,
 	ViewType,
 } from "Types/types";
 import { classNames } from "utils/classNames";
@@ -104,8 +105,18 @@ export class ChatContainer {
 	useVaultSearch: boolean = false;
 	/** File paths retrieved by vault search for the current generation — cleared after appending sources panel. */
 	private pendingRagSources: string[] = [];
+	/** Tool calls accumulated during the current agent turn — committed to allToolCallsByTurn at turn end. */
+	private pendingToolCalls: ToolCallRecord[] = [];
+	/**
+	 * Tool calls indexed by assistant-message turn (0-based).
+	 * Entry i holds all tool calls made before the i-th assistant response.
+	 * Cleared on newChat().
+	 */
+	private allToolCallsByTurn: Map<number, ToolCallRecord[]> = new Map();
 	/** Resolves when the most recent generateIMLikeMessages render is complete. */
 	private renderingPromise: Promise<void> = Promise.resolve();
+	/** Incremented each time a new render starts; stale renders compare against this and abort. */
+	private renderGeneration = 0;
 	/** Tracks the file path for the currently active chat file (file-based history only). Cleared on new chat. */
 	currentHistoryFilePath: string | null = null;
 	/** Optional callback set by the FAB header to sync the title display. */
@@ -113,7 +124,7 @@ export class ChatContainer {
 	chipContainer: HTMLElement | null = null;
 	addFilesButton: ButtonComponent | null = null;
 	scanButton: ButtonComponent | null = null;
-	activeFileForChip: { name: string } | null = null;
+	activeFileForChip: { name: string; path: string } | null = null;
 	/** Stored so StatusBarButton (and FAB) can re-sync the displayed model after settings change. */
 	private modelDropdown: DropdownComponent | null = null;
 
@@ -157,10 +168,15 @@ export class ChatContainer {
 		// Each view has its own store, so the messages passed here are always
 		// the right ones for this view — no cross-view filtering needed.
 		this.resetChat();
+		// Stamp a new generation so any in-flight render from a previous call
+		// can detect it has been superseded and abort. Without this, stale async
+		// renders continue appending DOM nodes after resetChat() has cleared the
+		// container, causing duplicated or out-of-order messages.
+		const gen = ++this.renderGeneration;
 		// Store the promise so handleGenerateClick can await it before appending
 		// the streaming/thinking div. Without this, setDiv() races with the async
 		// message render and the thinking animation lands above the user message.
-		this.renderingPromise = this.generateIMLikeMessages(messages);
+		this.renderingPromise = this.generateIMLikeMessages(messages, gen);
 	}
 
 	getMessages() {
@@ -674,12 +690,20 @@ export class ChatContainer {
 		const hasExplicitFileContext = (contextSettings.selectedFiles?.length ?? 0) > 0;
 		if (modelEndpoint !== images && (this.plugin.settings.enableFileContext || hasExplicitFileContext)) {
 			try {
+				// useActiveFileContext is the single source of truth for whether the
+				// active file is included. The saved setting controls the initial state
+				// of useActiveFileContext, but the scan button can override it — so we
+				// pass that flag here rather than the raw setting value.
+				const effectiveContextSettings = {
+					...contextSettings,
+					includeActiveFile: this.useActiveFileContext,
+				};
 				contextString = await this.contextBuilder.buildFormattedContext(
-					contextSettings,
+					effectiveContextSettings,
 					contextTokenBudget
 				);
 				if (contextString) {
-					vaultContext = await this.contextBuilder.buildContext(contextSettings);
+					vaultContext = await this.contextBuilder.buildContext(effectiveContextSettings);
 					// Store for use in historyPush
 					this.currentVaultContext = vaultContext;
 					// Store context string to be injected into API params (not rendered in UI)
@@ -721,15 +745,21 @@ export class ChatContainer {
 		// Active file context toggle (explicit user action via scan button)
 		if (this.useActiveFileContext && modelEndpoint !== images) {
 			try {
-				const activeFile = this.plugin.app.workspace.getActiveFile();
-				if (activeFile) {
-					const content = await this.plugin.app.vault.read(activeFile);
+				// Use the path locked when the user activated context, NOT the current
+				// active file. This prevents switching documents mid-task from silently
+				// swapping the context out from under the conversation.
+				const lockedPath = this.activeFileForChip?.path;
+				const contextFile = lockedPath
+					? (this.plugin.app.vault.getAbstractFileByPath(lockedPath) as import("obsidian").TFile | null)
+					: this.plugin.app.workspace.getActiveFile();
+				if (contextFile) {
+					const content = await this.plugin.app.vault.read(contextFile);
 					const activeFileContextString =
-						`# Active File: ${activeFile.name}\nPath: \`${activeFile.path}\`\n\n\`\`\`\n${content}\n\`\`\`\n`;
+						`# Active File: ${contextFile.name}\nPath: \`${contextFile.path}\`\n\n\`\`\`\n${content}\n\`\`\`\n`;
 					// Override any previously built context string — explicit toggle wins
 					this.pendingContextString = activeFileContextString;
 					this.currentVaultContext = {
-						activeFile: { path: activeFile.path, name: activeFile.name, content },
+						activeFile: { path: contextFile.path, name: contextFile.name, content },
 						additionalFiles: [],
 					};
 				}
@@ -740,7 +770,9 @@ export class ChatContainer {
 
 		// For agent mode: prepend a hint that identifies the active/context file(s)
 		// so the model knows which file to act on when the user says "this page", etc.
-		if (this.supportsAgentMode(modelType) && modelEndpoint !== images) {
+		// Only inject when the user has active-file context enabled — otherwise agent
+		// models will autonomously read the file even though the user turned it off.
+		if (this.supportsAgentMode(modelType) && modelEndpoint !== images && this.useActiveFileContext) {
 			const activeFile = this.plugin.app.workspace.getActiveFile();
 			if (activeFile || this.pendingContextString) {
 				const activeHint = activeFile
@@ -956,6 +988,11 @@ export class ChatContainer {
 		const permissionMode =
 			this.plugin.settings[settingType].agentSettings?.permissionMode ?? "ask";
 
+		// Capture the current assistant-message count to use as the turn index.
+		// Tool calls accumulated this turn will be associated with this index.
+		const turnIndex = this.getMessages().filter((m) => m.role === assistant).length;
+		this.pendingToolCalls = [];
+
 		const agentLoop = new AgentLoop(
 			this.plugin.app,
 			permissionMode,
@@ -983,6 +1020,7 @@ export class ChatContainer {
 				this.showThinkingAnimation();
 			},
 			onToolResult: (toolName, input, result) => {
+				// Track for RAG sources panel
 				if (toolName === "search_vault_semantic") {
 					// Extract ### file/path.md headers from the formatted result block
 					const paths = extractRagSourcePaths(result);
@@ -995,6 +1033,8 @@ export class ChatContainer {
 						this.pendingRagSources.push(input.path);
 					}
 				}
+				// Record the tool call for chat file history
+				this.pendingToolCalls.push({ name: toolName, input, result });
 			},
 		};
 
@@ -1014,6 +1054,12 @@ export class ChatContainer {
 		await this.renderMarkdown(this.previewText, this.streamingDiv);
 
 		this.messageStore.addMessage({ role: assistant, content: this.previewText });
+
+		// Commit tool calls for this turn before saving to history
+		if (this.pendingToolCalls.length > 0) {
+			this.allToolCallsByTurn.set(turnIndex, [...this.pendingToolCalls]);
+			this.pendingToolCalls = [];
+		}
 
 		const messageContext = {
 			...(params as ChatParams),
@@ -1109,7 +1155,8 @@ export class ChatContainer {
 				"", // title unused on update
 				messages,
 				params,
-				vaultContext
+				vaultContext,
+				this.allToolCallsByTurn.size > 0 ? this.allToolCallsByTurn : undefined
 			);
 			return;
 		}
@@ -1141,7 +1188,8 @@ export class ChatContainer {
 			title,
 			messages,
 			params,
-			vaultContext
+			vaultContext,
+			this.allToolCallsByTurn.size > 0 ? this.allToolCallsByTurn : undefined
 		);
 
 		this.currentHistoryFilePath = filePath;
@@ -1461,7 +1509,7 @@ export class ChatContainer {
 				if (this.useActiveFileContext) {
 					const activeFile = this.plugin.app.workspace.getActiveFile();
 					if (activeFile) {
-						this.activeFileForChip = { name: activeFile.name };
+						this.activeFileForChip = { name: activeFile.name, path: activeFile.path };
 						this.scanButton!.buttonEl.addClass("is-active");
 						this.syncChips();
 					} else {
@@ -1573,7 +1621,7 @@ export class ChatContainer {
 			const activeFile = this.plugin.app.workspace.getActiveFile();
 			if (activeFile) {
 				this.useActiveFileContext = true;
-				this.activeFileForChip = { name: activeFile.name };
+				this.activeFileForChip = { name: activeFile.name, path: activeFile.path };
 				this.scanButton?.buttonEl.addClass("is-active");
 			}
 		}
@@ -1822,9 +1870,15 @@ export class ChatContainer {
 		}
 	}
 
-	async generateIMLikeMessages(messages: Message[]) {
+	async generateIMLikeMessages(messages: Message[], gen?: number) {
 		let finalMessage = false;
 		for (let index = 0; index < messages.length; index++) {
+			// Abort if a newer render has been kicked off since this one started.
+			// Each await inside createMessage (e.g. renderMarkdown) is a yield
+			// point where updateMessages may have already called resetChat() and
+			// started a fresh render. Continuing would write stale nodes into
+			// the newly-cleared container, causing duplicated / out-of-order UI.
+			if (gen !== undefined && gen !== this.renderGeneration) return;
 			const { role, content } = messages[index];
 			if (index === messages.length - 1) finalMessage = true;
 			if (role === "assistant") {
@@ -1833,6 +1887,7 @@ export class ChatContainer {
 				await this.createMessage(content, index, finalMessage);
 			}
 		}
+		if (gen !== undefined && gen !== this.renderGeneration) return;
 		this.historyMessages.scroll(0, 9999);
 	}
 
@@ -1881,11 +1936,17 @@ export class ChatContainer {
 		const includeActiveFile =
 			this.plugin.settings[settingType].contextSettings.includeActiveFile;
 
+		const hasConversation = this.getMessages().length > 0;
+
 		if (this.useActiveFileContext) {
+			// Mid-conversation: the user pointed at a file deliberately — keep it.
+			// Only swap if no messages exist yet (chat hasn't started).
+			if (hasConversation) return;
+
 			// Context is on — update to the currently active file.
 			const activeFile = this.plugin.app.workspace.getActiveFile();
 			if (activeFile) {
-				this.activeFileForChip = { name: activeFile.name };
+				this.activeFileForChip = { name: activeFile.name, path: activeFile.path };
 			} else {
 				// No file open any more — turn the chip off cleanly.
 				this.activeFileForChip = null;
@@ -1893,13 +1954,14 @@ export class ChatContainer {
 				this.scanButton?.buttonEl.removeClass("is-active");
 			}
 			this.syncChips();
-		} else if (includeActiveFile && !this.activeFileForChip) {
+		} else if (includeActiveFile && !this.activeFileForChip && !hasConversation) {
 			// Context was never activated because no file was open at build
-			// time. Try again now that the popover is being shown.
+			// time. Try again now that the popover is being shown — but only
+			// if the conversation hasn't started yet.
 			const activeFile = this.plugin.app.workspace.getActiveFile();
 			if (activeFile) {
 				this.useActiveFileContext = true;
-				this.activeFileForChip = { name: activeFile.name };
+				this.activeFileForChip = { name: activeFile.name, path: activeFile.path };
 				this.scanButton?.buttonEl.addClass("is-active");
 				this.syncChips();
 			}
@@ -1962,6 +2024,8 @@ export class ChatContainer {
 	newChat() {
 		this.historyMessages.empty();
 		this.claudeCodeSessionId = null;
+		this.pendingToolCalls = [];
+		this.allToolCallsByTurn = new Map();
 		this.displayNoChatView(this.historyMessages);
 
 		// Reset active file chip state, then re-evaluate from the current setting.
@@ -1978,7 +2042,7 @@ export class ChatContainer {
 			const activeFile = this.plugin.app.workspace.getActiveFile();
 			if (activeFile) {
 				this.useActiveFileContext = true;
-				this.activeFileForChip = { name: activeFile.name };
+				this.activeFileForChip = { name: activeFile.name, path: activeFile.path };
 				this.scanButton?.buttonEl.addClass("is-active");
 			}
 		}

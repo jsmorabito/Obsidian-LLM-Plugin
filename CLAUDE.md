@@ -47,6 +47,13 @@ Each view composes these shared components from `src/Plugin/Components/`:
 - **HistoryHandler** (`src/History/HistoryHandler.ts`) - Manages chat history (max 10 conversations)
 - **AssistantHandler** (`src/Assistants/AssistantHandler.ts`) - OpenAI assistants state
 
+#### Scan-button context locking (`activeFileForChip`)
+
+`ChatContainer.activeFileForChip` is `{ name: string; path: string } | null`. When the user activates the scan button, the file's **path** is stored at that moment and held for the life of the conversation. Two invariants must be preserved:
+
+1. **Send time reads the stored path, not `getActiveFile()`** — the `useActiveFileContext` block in `handleGenerateClick` resolves the file via `activeFileForChip.path` (falling back to `getActiveFile()` only when no chip is set). Do not revert this to a bare `getActiveFile()` call, or switching tabs mid-task will silently swap the injected context.
+2. **`refreshActiveFileChip()` is a no-op mid-conversation** — it guards on `this.getMessages().length > 0` and returns early, so opening the popover on a different note doesn't re-point the chip. The chip only auto-updates when the chat is empty (before the first send) or after `newChat()` resets state.
+
 ### Message Flow
 
 1. User input in `ChatContainer` triggers `handleGenerateClick()`
@@ -54,6 +61,18 @@ Each view composes these shared components from `src/Plugin/Components/`:
 3. API call made based on selected provider (OpenAI/Claude/Gemini/Mistral/Ollama/LM Studio/GPT4All)
 4. Streaming response updates UI in real-time
 5. Conversation saved to History
+
+#### Render generation guard (`renderGeneration`)
+
+`updateMessages` (the MessageStore subscriber) re-renders the full message list by calling `resetChat()` then `generateIMLikeMessages()`. Because `generateIMLikeMessages` is async (it `await`s `renderMarkdown` inside each `createMessage` call), a stale render can continue appending DOM nodes into a container that has already been cleared by a newer render, producing duplicated or out-of-order messages.
+
+To prevent this, `ChatContainer` maintains a `renderGeneration` counter. `updateMessages` increments it and passes the new value to `generateIMLikeMessages`. The render function checks `gen !== this.renderGeneration` before each message and before the final scroll — if it no longer holds the latest generation it returns immediately.
+
+**Do not remove this guard or make `generateIMLikeMessages` synchronous without understanding this invariant.** The race is subtle: it only manifests when the user sends a second message quickly (or when the store is updated programmatically in quick succession), so it is easy to miss in manual testing.
+
+#### `MessageStore.setMessages` copies the input array
+
+`setMessages` stores a shallow copy (`[...messages]`) rather than the direct reference. This prevents subsequent `addMessage` pushes from mutating the caller's array — notably `promptHistory[n].messages` in the legacy array-based history path.
 
 ### Platform Abstraction
 
@@ -68,8 +87,8 @@ Provider SDKs used:
 - `@anthropic-ai/sdk` - Claude models + Claude Code (agent SDK)
 - `@google/generative-ai` - Gemini models
 - Mistral — uses `openai` SDK with custom baseURL (`https://api.mistral.ai/v1`)
-- Ollama — uses `openai` SDK with custom baseURL (default `http://localhost:11434/v1`); models discovered dynamically via `fetchOllamaModels()`
-- LM Studio — uses `openai` SDK with custom baseURL (default `http://localhost:1234/v1`); models discovered dynamically via `fetchLMStudioModels()`; **must use `encoding_format: "float"` for embeddings** — the OpenAI SDK's default base64 format triggers a known GGUF bug in LM Studio that returns all-zero vectors (lmstudio-ai/lmstudio-bug-tracker#1647)
+- Ollama — uses `openai` SDK with custom baseURL (default `http://localhost:11434/v1`); models discovered dynamically via `/api/tags`
+- LM Studio — uses `openai` SDK with custom baseURL (default `http://localhost:1234/v1`); models discovered dynamically via `/v1/models`; no real API key required (uses `"lm-studio"` as placeholder)
 - GPT4All connects to local server on port 4891
 
 ### RAG / Vault Search
@@ -84,10 +103,16 @@ The plugin supports semantic search over the user's vault via three classes in `
 - `LLMPlugin.vaultIndexer` is the singleton instance; call `plugin.initVaultIndexer()` after any RAG setting change.
 - `LLMPlugin` registers `vault.on('modify')`, `vault.on('delete')`, and `vault.on('rename')` events to keep the index incrementally up-to-date. Modify events are debounced (2 s) to avoid hammering the embedding API during rapid autosaves.
 - `ObsidianToolRegistry` receives the `VaultIndexer` and exposes a `search_vault_semantic` tool (`risk: "safe"`). Tool-capable models (Claude, GPT-4, Gemini, Ollama, Mistral) call this autonomously via `AgentLoop`.
-- `AgentLoop` fires `AgentCallbacks.onToolResult(toolName, result)` after each successful tool execution — `ChatContainer` uses this to capture `search_vault_semantic` results and populate the cited sources panel.
+- `AgentLoop` fires `AgentCallbacks.onToolResult(toolName, input, result)` after each successful tool execution — `ChatContainer` uses this to (a) capture `search_vault_semantic` results and populate the cited sources panel, and (b) record the call in `pendingToolCalls` for inclusion in the saved chat file.
 - `ChatContainer` has a `useVaultSearch` toggle (toolbar button, visible when RAG is enabled) that pre-fills `pendingContextString` with top-k results — useful as a fallback or for models where the user wants guaranteed vault context. After generation, a collapsible "Sources" panel (`<details class="llm-rag-sources">`) is appended listing the contributing files as clickable links.
 - Search uses **hybrid scoring**: 70% cosine similarity + 30% BM25 keyword score. BM25 IDF is computed at search time across the in-memory corpus. The `VectorStore.hybridSearch()` method handles both; `VectorStore.search()` delegates to it with full vector weight for pure semantic use.
 - RAG settings live under `plugin.settings.ragSettings` (`RAGSettings` type in `types.ts`) and are configured in `LLMSettingsModal` under the "Vault Search" tab.
+
+#### Tool call recording in chat files
+
+`ChatContainer` tracks tool calls via two instance vars: `pendingToolCalls: ToolCallRecord[]` (accumulates during the current agent turn) and `allToolCallsByTurn: Map<number, ToolCallRecord[]>` (keyed by 0-based assistant-message index). At the start of `runAgentMode` the current assistant-message count is captured as `turnIndex`; `onToolResult` pushes to `pendingToolCalls`; after the turn completes the pending calls are committed to `allToolCallsByTurn.set(turnIndex, ...)`. Both vars are reset in `newChat()`.
+
+`ChatHistory.save()` accepts an optional `toolCallsByTurn` map. When present, `messagesToMarkdown` injects a collapsible `> [!tool-use]-` callout immediately after each `## Assistant` heading. `markdownToMessages` strips these callouts before returning message content so they never pollute re-submitted conversation context.
 
 ### Key Files
 
