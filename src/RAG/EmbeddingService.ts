@@ -119,15 +119,26 @@ export class EmbeddingService {
 
 	private async embedLMStudio(text: string, model: string): Promise<number[]> {
 		const host = this.config.lmStudioHost ?? "http://localhost:1234";
-		// LM Studio exposes a fully OpenAI-compatible /v1/embeddings endpoint
+		// LM Studio exposes an OpenAI-compatible /v1/embeddings endpoint.
+		// We must explicitly request encoding_format "float" here: the OpenAI SDK
+		// defaults to "base64" for performance, but GGUF-backed embedding models in
+		// LM Studio return all-zero vectors when base64 is requested (known LM Studio
+		// bug — see lmstudio-ai/lmstudio-bug-tracker#1647). Float format is safe
+		// across all LM Studio model types.
 		const client = new OpenAI({
 			apiKey: "lm-studio",
 			baseURL: `${host}/v1`,
 			dangerouslyAllowBrowser: true,
 		});
-		const response = await client.embeddings.create({ model, input: text });
+		const response = await client.embeddings.create({
+			model,
+			input: text,
+			encoding_format: "float",
+		});
 		const embedding = response.data[0]?.embedding;
-		if (!embedding) throw new Error("[RAG] LM Studio returned no embedding");
+		if (!embedding || embedding.length === 0) {
+			throw new Error("[RAG] LM Studio returned no embedding — ensure an embedding model is loaded in LM Studio");
+		}
 		return embedding;
 	}
 

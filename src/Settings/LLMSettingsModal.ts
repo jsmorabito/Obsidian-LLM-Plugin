@@ -565,7 +565,6 @@ export class LLMSettingsModal extends Modal {
 				});
 			});
 
-		// Discovered models list
 		const modelListEl = items.createEl("p", {
 			cls: "setting-item-description llm-settings-ollama-models",
 		});

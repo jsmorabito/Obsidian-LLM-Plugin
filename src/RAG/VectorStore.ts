@@ -51,6 +51,11 @@ export class VectorStore {
 			version: INDEX_VERSION,
 			entries: Array.from(this.entries.values()),
 		};
+		// Ensure the parent directory exists before writing (ENOENT on fresh installs)
+		const dir = this.indexPath.substring(0, this.indexPath.lastIndexOf("/"));
+		if (dir && !(await this.app.vault.adapter.exists(dir))) {
+			await this.app.vault.adapter.mkdir(dir);
+		}
 		await this.app.vault.adapter.write(this.indexPath, JSON.stringify(data));
 		this.dirty = false;
 	}

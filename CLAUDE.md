@@ -58,7 +58,7 @@ Each view composes these shared components from `src/Plugin/Components/`:
 
 1. User input in `ChatContainer` triggers `handleGenerateClick()`
 2. Message added to MessageStore, which notifies all subscribers
-3. API call made based on selected provider (OpenAI/Claude/Gemini/Mistral/Ollama/GPT4All)
+3. API call made based on selected provider (OpenAI/Claude/Gemini/Mistral/Ollama/LM Studio/GPT4All)
 4. Streaming response updates UI in real-time
 5. Conversation saved to History
 
@@ -95,8 +95,8 @@ Provider SDKs used:
 
 The plugin supports semantic search over the user's vault via three classes in `src/RAG/`:
 
-- **`VectorStore.ts`** — Persists embeddings as a flat JSON file at `.obsidian/plugins/Obsidian-LLM-Plugin/rag-index.json`. Provides cosine similarity search and incremental updates (skips files whose `mtime` hasn't changed).
-- **`EmbeddingService.ts`** — Provider-agnostic embedding generation. Supports OpenAI (`text-embedding-3-small`), Gemini (`text-embedding-004`), and Ollama (via the OpenAI-compatible `/v1/embeddings` endpoint). Reuses API keys already stored in plugin settings.
+- **`VectorStore.ts`** — Persists embeddings as a flat JSON file (path passed via constructor). Provides cosine similarity search and incremental updates (skips files whose `mtime` hasn't changed). `save()` ensures the parent directory exists before writing — always use `vault.adapter.mkdir()` guard before any `adapter.write()` to a plugin-relative path, as the directory may not exist on fresh installs.
+- **`EmbeddingService.ts`** — Provider-agnostic embedding generation. Supports OpenAI (`text-embedding-3-small`), Gemini (`text-embedding-004`), Ollama, and LM Studio (all via the OpenAI-compatible `/v1/embeddings` endpoint). LM Studio calls must pass `encoding_format: "float"` explicitly. Reuses API keys/hosts already stored in plugin settings.
 - **`VaultIndexer.ts`** — Orchestrates indexing (chunking by paragraph, ~1500 chars per chunk with file path + heading prefix) and exposes `semanticSearch(query, topK)` which returns a formatted markdown context block. Calls `EmbeddingService.checkOllamaModel()` before indexing to surface a clear pull-command error if the Ollama model isn't available.
 
 **How it integrates:**
