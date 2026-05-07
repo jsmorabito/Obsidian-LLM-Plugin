@@ -20,7 +20,7 @@ import { ChatModal2 } from "Plugin/Modal/ChatModal2";
 import { TAB_VIEW_TYPE, WidgetView } from "Plugin/Widget/Widget";
 import SettingsView from "Settings/SettingsView";
 import { getApiKeyValidity } from "utils/utils";
-import { models, modelNames, buildOllamaModels } from "utils/models";
+import { models, modelNames, buildOllamaModels, buildLMStudioModels } from "utils/models";
 import {
 	chat,
 	claudeSonnet46Model,
@@ -74,6 +74,8 @@ export interface LLMPluginSettings {
 	defaultModel: string;
 	ollamaHost: string;
 	ollamaModels: string[];
+	lmStudioHost: string;
+	lmStudioModels: string[];
 	emptyChatAvatar: string;
 	fabViewHeight?: number;
 	showStatusBarButton: boolean;
@@ -148,6 +150,8 @@ export const DEFAULT_SETTINGS: LLMPluginSettings = {
 	defaultModel: "",
 	ollamaHost: "http://localhost:11434",
 	ollamaModels: [],
+	lmStudioHost: "http://localhost:1234",
+	lmStudioModels: [],
 	emptyChatAvatar: "llm-gal",
 	showStatusBarButton: false,
 	ragSettings: {
@@ -192,6 +196,7 @@ export default class LLMPlugin extends Plugin {
 		this.initVaultIndexer();
 		this.registerRagVaultEvents();
 		this.registerOllamaModels();
+		this.registerLMStudioModels();
 		await this.checkForAPIKeyBasedModel();
 		this.registerRibbonIcons();
 		this.registerCommands();
@@ -390,6 +395,7 @@ export default class LLMPlugin extends Plugin {
 			openAIKey: this.settings.openAIAPIKey,
 			geminiKey: this.settings.geminiAPIKey,
 			ollamaHost: this.settings.ollamaHost,
+			lmStudioHost: this.settings.lmStudioHost,
 		});
 		const indexPath = `${this.manifest.dir}/rag-index.json`;
 		const store = new VectorStore(this.app, indexPath);
@@ -436,6 +442,14 @@ export default class LLMPlugin extends Plugin {
 	private registerOllamaModels() {
 		if (this.settings.ollamaModels.length > 0) {
 			const built = buildOllamaModels(this.settings.ollamaModels);
+			Object.assign(models, built.models);
+			Object.assign(modelNames, built.names);
+		}
+	}
+
+	private registerLMStudioModels() {
+		if (this.settings.lmStudioModels.length > 0) {
+			const built = buildLMStudioModels(this.settings.lmStudioModels);
 			Object.assign(models, built.models);
 			Object.assign(modelNames, built.names);
 		}

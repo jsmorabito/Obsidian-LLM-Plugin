@@ -39,6 +39,7 @@ import {
 	images,
 	messages,
 	ollama,
+	lmStudio,
 	mistral,
 	openAI,
 } from "utils/constants";
@@ -175,6 +176,7 @@ export class ChatContainer {
 		// context via their own dedicated parameters (set on the params object below).
 		const isOpenAICompatible =
 			modelType === ollama ||
+			modelType === lmStudio ||
 			modelType === mistral ||
 			modelType === GPT4All ||
 			endpoint === chat;
@@ -211,7 +213,7 @@ export class ChatContainer {
 		}
 
 		if (endpoint === chat) {
-			if (modelType === ollama || modelType === mistral || modelType === GPT4All) {
+			if (modelType === ollama || modelType === lmStudio || modelType === mistral || modelType === GPT4All) {
 				const params: ChatParams = {
 					prompt: this.prompt,
 					messages: messagesForParams,
@@ -278,7 +280,7 @@ export class ChatContainer {
 			modelType,
 			modelName,
 		} = getViewInfo(this.plugin, this.viewType);
-		let shouldHaveAPIKey = modelType !== GPT4All && modelType !== ollama && modelType !== mistral && modelEndpoint !== claudeCodeEndpoint;
+		let shouldHaveAPIKey = modelType !== GPT4All && modelType !== ollama && modelType !== lmStudio && modelType !== mistral && modelEndpoint !== claudeCodeEndpoint;
 		const messagesForParams = this.getMessages();
 		// TODO - fix this logic to actually do an API key check against the current view model.
 		if (shouldHaveAPIKey) {
@@ -492,6 +494,54 @@ export class ChatContainer {
 				modelName,
 			} as ChatHistoryItem;
 			this.historyPush(message_context, this.currentVaultContext);
+			return true;
+		}
+
+		// LM Studio handling (local, OpenAI-compatible with streaming)
+		if (modelType === lmStudio) {
+			this.setDiv(true);
+			this.showThinkingAnimation();
+
+			const lmStudioClient = new OpenAI({
+				apiKey: "lm-studio",
+				baseURL: `${this.plugin.settings.lmStudioHost}/v1`,
+				dangerouslyAllowBrowser: true,
+				timeout: 30000,
+			});
+			const { model, messages: msgList, tokens, temperature } = params as ChatParams;
+			const stream = await lmStudioClient.chat.completions.create({
+				model,
+				messages: msgList,
+				...(tokens ? { max_tokens: tokens } : {}),
+				temperature,
+				stream: true,
+			});
+
+			let firstChunk = true;
+			for await (const chunk of stream as Stream<ChatCompletionChunk>) {
+				const content = chunk.choices[0]?.delta?.content || "";
+				if (firstChunk && content) {
+					this.streamingDiv.empty();
+					firstChunk = false;
+				}
+				this.previewText += content;
+				if (!firstChunk) {
+					this.streamingDiv.textContent = this.previewText;
+					this.historyMessages.scroll(0, 9999);
+				}
+			}
+			this.streamingDiv.empty();
+			await this.renderMarkdown(this.previewText, this.streamingDiv);
+			this.messageStore.addMessage({
+				role: assistant,
+				content: this.previewText,
+			});
+			const lmStudioContext = {
+				...(params as ChatParams),
+				messages: this.getMessages(),
+				modelName,
+			} as ChatHistoryItem;
+			this.historyPush(lmStudioContext, this.currentVaultContext);
 			return true;
 		}
 
@@ -795,6 +845,7 @@ export class ChatContainer {
 		return (
 			modelType === claude ||
 			modelType === ollama ||
+			modelType === lmStudio ||
 			modelType === mistral ||
 			modelType === openAI
 		);
@@ -806,6 +857,14 @@ export class ChatContainer {
 			return new OpenAI({
 				apiKey: "ollama",
 				baseURL: `${this.plugin.settings.ollamaHost}/v1`,
+				dangerouslyAllowBrowser: true,
+				timeout: 30000,
+			});
+		}
+		if (modelType === lmStudio) {
+			return new OpenAI({
+				apiKey: "lm-studio",
+				baseURL: `${this.plugin.settings.lmStudioHost}/v1`,
 				dangerouslyAllowBrowser: true,
 				timeout: 30000,
 			});
@@ -1116,23 +1175,28 @@ export class ChatContainer {
 				},
 			];
 
-		// ── OpenAI / Mistral / Ollama (all OpenAI-compatible) ─────────────
+		// ── OpenAI / Mistral / Ollama / LM Studio (all OpenAI-compatible) ───
 		if (
 			modelType === openAI ||
 			modelType === mistral ||
-			modelType === ollama
+			modelType === ollama ||
+			modelType === lmStudio
 		) {
 			const apiKey =
 				modelType === openAI
 					? this.plugin.settings.openAIAPIKey
 					: modelType === mistral
 					? this.plugin.settings.mistralAPIKey
+					: modelType === lmStudio
+					? "lm-studio"
 					: "ollama";
 			const baseURL =
 				modelType === mistral
 					? "https://api.mistral.ai/v1"
 					: modelType === ollama
 					? `${this.plugin.settings.ollamaHost}/v1`
+					: modelType === lmStudio
+					? `${this.plugin.settings.lmStudioHost}/v1`
 					: undefined;
 
 			const client = new OpenAI({
@@ -1323,7 +1387,7 @@ export class ChatContainer {
 		for (const modelDisplayName of Object.keys(models)) {
 			const type = models[modelDisplayName].type;
 			// Local providers: always show
-			if (type === ollama) {
+			if (type === ollama || type === lmStudio) {
 				modelDropdown.addOption(models[modelDisplayName].model, modelDisplayName);
 				continue;
 			}
