@@ -1,111 +1,34 @@
 import { ImageSize, ViewType } from "Types/types";
 import LLMPlugin from "main";
 import { DropdownComponent, Setting } from "obsidian";
-import { modelNames, models } from "utils/models";
+import { models } from "utils/models";
 import {
 	getSettingType,
-	getViewInfo,
-	getGpt4AllPath
 } from "utils/utils";
-import { chat, claudeCodeEndpoint, claude, claudeCode, gemini, GPT4All, messages, mistral, ollama, openAI } from "utils/constants"
-import { Header } from "./Header";
-import { FileSelector } from "./FileSelector";
+import { chat, claudeCodeEndpoint, GPT4All, images, messages, openAI } from "utils/constants"
 
 export class SettingsContainer {
 	viewType: ViewType;
-	private onAdditionalFilesChange?: () => void;
 
 	constructor(private plugin: LLMPlugin, viewType: ViewType) {
 		this.viewType = viewType;
 	}
 
-	async generateSettingsContainer(
-		parentContainer: HTMLElement,
-		Header: Header,
-		onAdditionalFilesChange?: () => void
-	) {
-		// Persist the callback so re-renders triggered by the Header button or
-		// model dropdown change continue to wire it up correctly.
-		if (onAdditionalFilesChange) {
-			this.onAdditionalFilesChange = onAdditionalFilesChange;
-		}
+	async generateSettingsContainer(parentContainer: HTMLElement) {
 		this.resetSettings(parentContainer);
-		this.generateModels(parentContainer, Header);
-		this.generateModelSettings(parentContainer, this.onAdditionalFilesChange);
-	}
-
-	generateModels(parentContainer: HTMLElement, Header: Header) {
-		const settingType = getSettingType(this.viewType);
-		const viewSettings = this.plugin.settings[settingType];
-
-		new Setting(parentContainer)
-			.setName("Models")
-			.setDesc("The model you want to use to generate a chat response.")
-			.addDropdown((dropdown: DropdownComponent) => {
-				dropdown.addOption("", "---Select model---");
-				const { openAIAPIKey, claudeAPIKey, geminiAPIKey, mistralAPIKey } = this.plugin.settings;
-				let keys = Object.keys(models);
-				for (let model of keys) {
-					const type = models[model].type;
-					// Local providers: always show
-					if (type === ollama) {
-						dropdown.addOption(models[model].model, model);
-						continue;
-					}
-					// GPT4All: only show if the model file exists locally
-					if (type === GPT4All) {
-						const gpt4AllPath = getGpt4AllPath(this.plugin);
-						const fullPath = `${gpt4AllPath}/${models[model].model}`;
-						const exists = this.plugin.fileSystem.existsSync(fullPath);
-						if (exists) {
-							dropdown.addOption(models[model].model, model);
-						}
-						continue;
-					}
-					// Cloud providers: only show if an API key has been entered
-					if (type === openAI && !openAIAPIKey) continue;
-					if ((type === claude || type === claudeCode) && !claudeAPIKey) continue;
-					if (type === gemini && !geminiAPIKey) continue;
-					if (type === mistral && !mistralAPIKey) continue;
-					dropdown.addOption(models[model].model, model);
-				}
-				dropdown.onChange((change) => {
-					const { historyIndex } = getViewInfo(
-						this.plugin,
-						this.viewType
-					);
-					const index = historyIndex;
-					const modelName = modelNames[change];
-					viewSettings.model = change;
-					viewSettings.modelName = modelName;
-					viewSettings.modelType = models[modelName].type;
-					viewSettings.endpointURL = models[modelName].url;
-					viewSettings.modelEndpoint = models[modelName].endpoint;
-					if (index > -1) {
-						this.plugin.settings.promptHistory[index].model =
-							change;
-						this.plugin.settings.promptHistory[
-							index
-						].modelName = modelName;
-					}
-					this.plugin.saveSettings();
-					Header.setHeader(modelName);
-					this.generateSettingsContainer(parentContainer, Header);
-				});
-				dropdown.setValue(viewSettings.model);
-			});
+		this.generateModelSettings(parentContainer);
 	}
 
 	resetSettings(parentContainer: Element) {
 		parentContainer.empty();
 	}
 
-	generateModelSettings(parentContainer: HTMLElement, onAdditionalFilesChange?: () => void) {
+	generateModelSettings(parentContainer: HTMLElement) {
 		const settingType = getSettingType(this.viewType);
 		const viewSettings = this.plugin.settings[settingType];
 		const endpoint = viewSettings.modelEndpoint;
 		const modelType = viewSettings.modelType;
-		if (endpoint === "images") {
+		if (endpoint === images) {
 			this.generateImageSettings(parentContainer, viewSettings.model);
 		}
 		if (endpoint === "moderations") {
@@ -118,7 +41,9 @@ export class SettingsContainer {
 		}
 		if (endpoint === chat || messages) {
 			this.generateChatSettings(parentContainer, modelType);
-			this.generateContextSettings(parentContainer, onAdditionalFilesChange);
+			if (this.plugin.settings.enableFileContext) {
+				this.generateContextSettings(parentContainer);
+			}
 		}
 	}
 
@@ -321,7 +246,7 @@ export class SettingsContainer {
 		}
 	}
 
-	generateContextSettings(parentContainer: HTMLElement, onAdditionalFilesChange?: () => void) {
+	generateContextSettings(parentContainer: HTMLElement) {
 		const settingType = getSettingType(this.viewType);
 		const viewSettings = this.plugin.settings[settingType];
 		const contextSettings = viewSettings.contextSettings;
@@ -383,105 +308,6 @@ export class SettingsContainer {
 				});
 			});
 
-		// Select files button
-		const selectFilesSetting = new Setting(parentContainer)
-			.setName("Additional files")
-			.setDesc(
-				"Select additional files from your vault to include in the context."
-			)
-			.addButton((button) => {
-				button.setButtonText("Select Files").onClick(() => {
-					const modal = new FileSelector(
-						this.plugin.app,
-						this.plugin,
-						this.viewType,
-						contextSettings.selectedFiles,
-						(files) => {
-							contextSettings.selectedFiles = files;
-							this.plugin.saveSettings();
-							this.updateSelectedFilesDisplay(
-								parentContainer,
-								selectFilesSetting.settingEl,
-								onAdditionalFilesChange
-							);
-							onAdditionalFilesChange?.();
-						}
-					);
-					modal.open();
-				});
-			});
-
-		// Display selected files
-		this.updateSelectedFilesDisplay(parentContainer, selectFilesSetting.settingEl, onAdditionalFilesChange);
-	}
-
-	updateSelectedFilesDisplay(
-		parentContainer: HTMLElement,
-		selectFilesSetting: HTMLElement,
-		onAdditionalFilesChange?: () => void
-	) {
-		const settingType = getSettingType(this.viewType);
-		const contextSettings = this.plugin.settings[settingType].contextSettings;
-
-		// Remove existing display
-		const existingDisplay = parentContainer.querySelector(
-			".llm-selected-files-display"
-		);
-		if (existingDisplay) {
-			existingDisplay.remove();
-		}
-
-		// Create new display if there are selected files
-		if (contextSettings.selectedFiles.length > 0) {
-			const displayDiv = document.createElement("div");
-			displayDiv.className = "llm-selected-files-display";
-			displayDiv.style.marginLeft = "2em";
-			displayDiv.style.marginTop = "0.5em";
-			displayDiv.style.fontSize = "0.9em";
-
-			const title = displayDiv.createEl("div", {
-				text: `Selected files (${contextSettings.selectedFiles.length}):`,
-			});
-			title.style.fontWeight = "500";
-			title.style.marginBottom = "0.25em";
-
-			const fileList = displayDiv.createEl("ul");
-			fileList.style.margin = "0";
-			fileList.style.paddingLeft = "1.5em";
-
-			for (const filePath of contextSettings.selectedFiles) {
-				const fileItem = fileList.createEl("li");
-				fileItem.style.marginBottom = "0.25em";
-
-				const fileText = fileItem.createEl("span", {
-					text: filePath,
-				});
-				fileText.style.color = "var(--text-muted)";
-
-				const removeButton = fileItem.createEl("button", {
-					text: "×",
-				});
-				removeButton.style.marginLeft = "0.5em";
-				removeButton.style.padding = "0 0.5em";
-				removeButton.style.cursor = "pointer";
-				removeButton.addEventListener("click", () => {
-					contextSettings.selectedFiles =
-						contextSettings.selectedFiles.filter(
-							(f) => f !== filePath
-						);
-					this.plugin.saveSettings();
-					this.updateSelectedFilesDisplay(
-						parentContainer,
-						selectFilesSetting,
-						onAdditionalFilesChange
-					);
-					onAdditionalFilesChange?.();
-				});
-			}
-
-			// Insert after the select files setting
-			selectFilesSetting.after(displayDiv);
-		}
 	}
 
 	generateModerationsSettings(parentContainer: HTMLElement) { }

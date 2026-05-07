@@ -2,57 +2,16 @@ import LLMPlugin from "main";
 import {
 	App,
 	ButtonComponent,
-	DropdownComponent,
 	PluginSettingTab,
 	Setting,
-	TextComponent,
 } from "obsidian";
-import { changeDefaultModel, getGpt4AllPath, fetchOllamaModels } from "utils/utils";
-import { models, modelNames, buildOllamaModels } from "utils/models";
-import { GPT4All, ollama } from "utils/constants";
-import logo from "assets/LLMguy.svg";
+import logo from "assets/LLM-Squad.svg";
 import { FAB } from "Plugin/FAB/FAB";
-import { ChatModal2 } from "Plugin/Modal/ChatModal2";
-
-type APIKeyType = 'claude' | 'gemini' | 'openai' | 'mistral';
-
-interface APIKeyConfig {
-	name: string;
-	desc: string;
-	key: keyof LLMPlugin['settings'];
-	generateUrl: string;
-}
+import { LLMSettingsModal } from "Settings/LLMSettingsModal";
 
 export default class SettingsView extends PluginSettingTab {
 	plugin: LLMPlugin;
 	fab: FAB;
-	private currentApiInput: TextComponent | null = null;
-	private apiKeyConfigs: Record<APIKeyType, APIKeyConfig> = {
-		claude: {
-			name: "Claude API key",
-			desc: "Claude models require an API key for authentication.",
-			key: 'claudeAPIKey',
-			generateUrl: "https://console.anthropic.com/settings/keys"
-		},
-		gemini: {
-			name: "Gemini API key",
-			desc: "Gemini models require an API key for authentication.",
-			key: 'geminiAPIKey',
-			generateUrl: "https://aistudio.google.com/app/apikey"
-		},
-		openai: {
-			name: "OpenAI API key",
-			desc: "OpenAI models require an API key for authentication.",
-			key: 'openAIAPIKey',
-			generateUrl: "https://platform.openai.com/api-keys"
-		},
-		mistral: {
-			name: "Mistral API key",
-			desc: "Mistral AI models require an API key for authentication.",
-			key: 'mistralAPIKey',
-			generateUrl: "https://console.mistral.ai/api-keys"
-		}
-	};
 
 	constructor(app: App, plugin: LLMPlugin, fab: FAB) {
 		super(app, plugin);
@@ -64,282 +23,21 @@ export default class SettingsView extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		// Adds reset history button
+		// Open settings button — launches the dedicated settings modal
 		new Setting(containerEl)
-			.setName("Reset chat history")
-			.setDesc("This will delete previous prompts and chat contexts")
+			.setName("Plugin settings")
+			.setDesc("Open the dedicated settings panel with all configuration options.")
 			.addButton((button: ButtonComponent) => {
-				button.setButtonText("Reset history");
+				button.setButtonText("Open settings");
+				button.setCta();
 				button.onClick(() => {
-					this.plugin.history.reset();
+					new LLMSettingsModal(this.app, this.plugin, this.fab).open();
 				});
 			});
 
-		const apiKeySection = containerEl.createDiv();
-		new Setting(apiKeySection)
-			.setName("Manage API keys")
-			.setDesc("Select which API key you want to view or modify")
-			.addDropdown((dropdown) => {
-				dropdown.addOption('', 'Select API to configure');
-				Object.keys(this.apiKeyConfigs).forEach((key) => {
-					dropdown.addOption(key, this.apiKeyConfigs[key as APIKeyType].name);
-				});
-				dropdown.onChange((value) => {
-					this.showApiKeyInput(value as APIKeyType, apiKeySection);
-				});
-			});
-
-		// Add Default Model Selector
 		new Setting(containerEl)
-			.setClass('default-model-selector')
-			.setName("Set default model")
-			.setDesc("Sets the default LLM you want to use for the plugin")
-			.addDropdown((dropdown: DropdownComponent) => {
-				let valueChanged = false;
-				dropdown.addOption(
-					modelNames[this.plugin.settings.defaultModel],
-					"Select default model"
-				);
-
-				// Merge static models with dynamic Ollama models
-				const ollamaBuilt = buildOllamaModels(this.plugin.settings.ollamaModels);
-				const allModels = { ...models, ...ollamaBuilt.models };
-				const allModelNames = { ...modelNames, ...ollamaBuilt.names };
-
-				let keys = Object.keys(allModels);
-				for (let model of keys) {
-					const type = allModels[model].type;
-					// Local providers: always show
-					if (type === ollama) {
-						dropdown.addOption(allModels[model].model, model);
-						continue;
-					}
-					// GPT4All: only show if the model file exists locally
-					if (type === GPT4All) {
-						const gpt4AllPath = getGpt4AllPath(this.plugin);
-						const fullPath = `${gpt4AllPath}/${allModels[model].model}`;
-						const exists = this.plugin.fileSystem.existsSync(fullPath);
-						if (exists) {
-							dropdown.addOption(allModels[model].model, model);
-						}
-						continue;
-					}
-					// All other providers: always show regardless of API key presence
-					dropdown.addOption(allModels[model].model, model);
-				}
-				dropdown.onChange((change) => {
-					valueChanged = true;
-					// For Ollama models, we need to use the merged dicts
-					const name = allModelNames[change];
-					if (name && allModels[name]?.type === ollama) {
-						// Register dynamically so changeDefaultModel can find it
-						models[name] = allModels[name];
-						modelNames[change] = name;
-					}
-					changeDefaultModel(change, this.plugin)
-				});
-				dropdown.selectEl.addEventListener('blur', () => {
-					if (valueChanged) {
-						this.plugin.saveSettings();
-						valueChanged = false;
-					}
-				});
-				dropdown.setValue(this.plugin.settings.modalSettings.model);
-			});
-
-		// Empty chat avatar selector
-		new Setting(containerEl)
-			.setName("Empty chat avatar")
-			.setDesc("Choose which avatar to display on empty/new chats")
-			.addDropdown((dropdown: DropdownComponent) => {
-				dropdown.addOption("llm-gal", "LLM Gal");
-				dropdown.addOption("llm-guy", "LLM Guy");
-				dropdown.addOption("zen-kid", "Zen Kid");
-				dropdown.addOption("ninja-cat", "Ninja Cat");
-				dropdown.setValue(this.plugin.settings.emptyChatAvatar || "llm-gal");
-				dropdown.onChange(async (value) => {
-					this.plugin.settings.emptyChatAvatar = value;
-					await this.plugin.saveSettings();
-				});
-			});
-
-		// Add Toggle FAB button
-		new Setting(containerEl)
-			.setName("Toggle FAB")
-			.setDesc("Toggles the LLM floating action button")
-			.addToggle((value) => {
-				value
-					.setValue(this.plugin.settings.showFAB)
-					.onChange(async (value) => {
-						this.fab.removeFab();
-						this.plugin.settings.showFAB = value;
-						await this.plugin.saveSettings();
-						if (value) {
-							this.fab.regenerateFAB();
-						}
-					});
-			});
-
-		// Add Toggle Status Bar Button
-		new Setting(containerEl)
-			.setName("Toggle Ask AI in status bar")
-			.setDesc("Shows an 'Ask AI' button in the status bar that opens the chat popover")
-			.addToggle((toggle) => {
-				toggle
-					.setValue(this.plugin.settings.showStatusBarButton)
-					.onChange(async (value) => {
-						this.plugin.settings.showStatusBarButton = value;
-						await this.plugin.saveSettings();
-						if (value) {
-							this.plugin.statusBarButton.generate();
-							this.plugin.recentChatsButton.generate();
-						} else {
-							this.plugin.statusBarButton.remove();
-							this.plugin.recentChatsButton.remove();
-						}
-					});
-			});
-
-		// Add Toggle Ribbon Icon
-		new Setting(containerEl)
-			.setName("Show ribbon icon")
-			.setDesc("Show the 'Ask a question' icon in the ribbon bar")
-			.addToggle((toggle) => {
-				toggle
-					.setValue(this.plugin.settings.showRibbonIcon)
-					.onChange(async (value) => {
-						this.plugin.settings.showRibbonIcon = value;
-						await this.plugin.saveSettings();
-						if (value && !this.plugin.ribbonIconEl) {
-							this.plugin.ribbonIconEl = this.plugin.addRibbonIcon(
-								"bot",
-								"Ask a question",
-								() => {
-									new ChatModal2(this.plugin).open();
-								}
-							);
-						} else if (!value && this.plugin.ribbonIconEl) {
-							this.plugin.ribbonIconEl.remove();
-							this.plugin.ribbonIconEl = null;
-						}
-					});
-			});
-
-		// Ollama settings
-		const ollamaSection = containerEl.createDiv();
-		ollamaSection.createEl("h3", { text: "Ollama" });
-
-		new Setting(ollamaSection)
-			.setName("Ollama host")
-			.setDesc("URL of your Ollama server (default: http://localhost:11434)")
-			.addText((text) => {
-				text.setPlaceholder("http://localhost:11434");
-				text.setValue(this.plugin.settings.ollamaHost);
-				text.onChange((value) => {
-					this.plugin.settings.ollamaHost = value;
-					this.plugin.saveSettings();
-				});
-			});
-
-		const ollamaModelListEl = ollamaSection.createDiv();
-		if (this.plugin.settings.ollamaModels.length > 0) {
-			ollamaModelListEl.createEl("p", {
-				text: `Discovered models: ${this.plugin.settings.ollamaModels.join(", ")}`,
-				cls: "setting-item-description",
-			});
-		}
-
-		new Setting(ollamaSection)
-			.setName("Refresh models")
-			.setDesc("Fetch available models from your Ollama server")
-			.addButton((button) => {
-				button.setButtonText("Refresh");
-				button.onClick(async () => {
-					try {
-						button.setButtonText("Fetching...");
-						button.setDisabled(true);
-						const foundModels = await fetchOllamaModels(
-							this.plugin.settings.ollamaHost
-						);
-						this.plugin.settings.ollamaModels = foundModels;
-						// Register in global models/modelNames so FAB/Modal/Widget dropdowns see them
-						const built = buildOllamaModels(foundModels);
-						Object.assign(models, built.models);
-						Object.assign(modelNames, built.names);
-						await this.plugin.saveSettings();
-						// Refresh the settings display
-						this.display();
-					} catch (error) {
-						console.error("Failed to fetch Ollama models:", error);
-						ollamaModelListEl.empty();
-						ollamaModelListEl.createEl("p", {
-							text: "Failed to connect to Ollama. Is it running?",
-							cls: "setting-item-description",
-						});
-						button.setButtonText("Refresh");
-						button.setDisabled(false);
-					}
-				});
-			});
-
-		// Claude Code settings
-		const claudeCodeSection = containerEl.createDiv();
-		claudeCodeSection.createEl("h3", { text: "Claude Code" });
-
-		new Setting(claudeCodeSection)
-			.setName("Claude Code OAuth token")
-			.setDesc("OAuth token for authenticating with Claude Code (CLAUDE_CODE_OAUTH_TOKEN).")
-			.addText((text) => {
-				text.inputEl.type = "password";
-				text.setValue(this.plugin.settings.claudeCodeOAuthToken);
-				text.onChange((value) => {
-					this.plugin.settings.claudeCodeOAuthToken = value;
-					this.plugin.saveSettings();
-				});
-			});
-
-		// Linear workspaces list
-		const linearSection = claudeCodeSection.createDiv();
-		linearSection.createEl("h4", { text: "Linear Workspaces (Claude Code only)" });
-		const desc = linearSection.createEl("p", { cls: "setting-item-description" });
-		desc.appendText("Add Linear workspaces with their ");
-		desc.createEl("a", {
-			text: "API keys",
-			href: "https://linear.app/settings/account/security",
-		});
-		desc.appendText(". Each workspace gets its own MCP server.");
-
-		const workspaceListEl = linearSection.createDiv({ cls: "linear-workspace-list" });
-		this.renderWorkspaceList(workspaceListEl);
-
-		new Setting(linearSection)
-			.setName("Add workspace")
-			.addButton((button) => {
-				button.setButtonText("+ Add Linear workspace");
-				button.onClick(() => {
-					this.plugin.settings.linearWorkspaces.push({ name: "", apiKey: "" });
-					this.plugin.saveSettings();
-					this.renderWorkspaceList(workspaceListEl);
-				});
-			});
-
-		// Add Toggle File Context button
-		new Setting(containerEl)
-			.setName("Enable file context")
-			.setDesc("Enable the file context feature that allows AI to access vault files. When disabled, AI will not have access to any files from your vault.")
-			.addToggle((toggle) => {
-				toggle
-					.setValue(this.plugin.settings.enableFileContext)
-					.onChange(async (value) => {
-						this.plugin.settings.enableFileContext = value;
-						await this.plugin.saveSettings();
-					});
-			});
-
-		// Add donation button
-		new Setting(containerEl)
-			.setName("Donate")
-			.setDesc("Consider donating to support development.")
+			.setName("Support development")
+			.setDesc("Consider donating to support ongoing development.")
 			.addButton((button: ButtonComponent) => {
 				button.setButtonText("Donate");
 				button.onClick(() => {
@@ -377,72 +75,4 @@ export default class SettingsView extends PluginSettingTab {
 		credits.appendChild(creditsVersion);
 	}
 
-	private renderWorkspaceList(containerEl: HTMLElement) {
-		containerEl.empty();
-		const workspaces = this.plugin.settings.linearWorkspaces;
-
-		workspaces.forEach((ws, index) => {
-			const row = new Setting(containerEl)
-				.addText((text) => {
-					text.setPlaceholder("Workspace name");
-					text.setValue(ws.name);
-					text.onChange((value) => {
-						this.plugin.settings.linearWorkspaces[index].name = value;
-						this.plugin.saveSettings();
-					});
-				})
-				.addText((text) => {
-					text.setPlaceholder("API key");
-					text.inputEl.type = "password";
-					text.setValue(ws.apiKey);
-					text.onChange((value) => {
-						this.plugin.settings.linearWorkspaces[index].apiKey = value;
-						this.plugin.saveSettings();
-					});
-				})
-				.addButton((button) => {
-					button.setIcon("trash");
-					button.setTooltip("Remove workspace");
-					button.onClick(() => {
-						this.plugin.settings.linearWorkspaces.splice(index, 1);
-						this.plugin.saveSettings();
-						this.renderWorkspaceList(containerEl);
-					});
-				});
-			row.setName(ws.name || `Workspace ${index + 1}`);
-		});
-	}
-
-	private showApiKeyInput(type: APIKeyType, containerEl: HTMLElement) {
-		const existingSettings = containerEl.querySelector('.api-key-input');
-		if (existingSettings) {
-			existingSettings.remove();
-		}
-
-		if (!type) return;
-
-		const config = this.apiKeyConfigs[type];
-		const settingContainer = containerEl.createDiv();
-		settingContainer.addClass('api-key-input');
-
-		new Setting(settingContainer)
-			.setName(config.name)
-			.setDesc(config.desc)
-			.addText((text) => {
-				this.currentApiInput = text;
-				text.setValue(this.plugin.settings[config.key] as string);
-				text.onChange((value) => {
-					if (value.trim().length) {
-						(this.plugin.settings[config.key] as string) = value;
-						this.plugin.saveSettings();
-					}
-				});
-			})
-			.addButton((button: ButtonComponent) => {
-				button.setButtonText("Generate token");
-				button.onClick(() => {
-					window.open(config.generateUrl);
-				});
-			});
-	}
 }

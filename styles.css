@@ -216,7 +216,7 @@
 }
 
 .llm-modal-settings-container.llm-flex {
-	padding-top: 16px;
+	padding-top: var(--size-4-4);
 }
 
 .modal:not(.mod-settings) .llm-modal-chat-history-container .setting-item.llm-history-item {
@@ -892,8 +892,12 @@ div.im-like-message.llm-widget-chat-message > p {
 
 	> svg {
 		color: var(--color-accent-1);
-		width: 90px;
+		width: 180px;
 		height: 90px;
+
+		> path {
+			fill: var(--color-accent-1);
+		}
 	}
 }
 
@@ -938,7 +942,7 @@ div.im-like-message.llm-widget-chat-message > p {
 
 .llm-hero-names {
 	font-size: var(--font-ui-small);
-	margin: 0px;
+	margin: 0;
 }
 
 .llm-text-muted,
@@ -966,7 +970,7 @@ div.im-like-message.llm-widget-chat-message > p {
 
 .llm-vector-file {
 	border-radius: var(--radius-m);
-	padding: 6px;
+	padding: var(--size-4-1);
 	width: 100%;
 	text-align: start;
 	border-bottom: 2px solid var(--background-modifier-border);
@@ -1023,7 +1027,7 @@ div.im-like-message.llm-widget-chat-message > p {
 	display: inline-flex;
 	align-items: center;
 	flex-shrink: 0;
-	--icon-size: 12px;
+	--icon-size: var(--icon-xs);
 	--icon-stroke: 1.5;
 	color: var(--text-faint);
 }
@@ -1042,7 +1046,7 @@ div.im-like-message.llm-widget-chat-message > p {
 	font-size: var(--font-ui-small);
 	line-height: 1;
 	user-select: none;
-	padding: 0 2px;
+	padding: 0 var(--size-2-1);
 }
 
 .llm-context-chip-remove:hover {
@@ -1093,6 +1097,10 @@ button.llm-scan-button.is-active:hover {
 	box-shadow: none;
 }
 
+button.llm-scan-button.llm-hidden {
+	display: none;
+}
+
 /* STATUS BAR BUTTON */
 
 .llm-status-bar-button {
@@ -1104,6 +1112,85 @@ button.llm-scan-button.is-active:hover {
 	border-radius: var(--radius-s);
 	color: var(--status-bar-text-color);
 	transition: background-color 100ms ease;
+}
+
+/* AGENT PERMISSION CARD */
+
+.llm-permission-card {
+	border: var(--border-width) solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+	padding: var(--size-4-3);
+	margin: var(--size-4-2) 0;
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+}
+
+.llm-permission-header {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+	--icon-size: var(--icon-s);
+	--icon-stroke: var(--icon-s-stroke-width);
+	color: var(--color-accent);
+}
+
+.llm-permission-title {
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+}
+
+.llm-permission-body {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-1);
+}
+
+.llm-permission-description {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+
+.llm-permission-input {
+	background-color: var(--background-modifier-form-field);
+	border: var(--border-width) solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	padding: var(--size-4-2);
+	font-size: var(--font-ui-smaller);
+	font-family: var(--font-monospace);
+	color: var(--text-normal);
+	white-space: pre-wrap;
+	word-break: break-all;
+	margin: 0;
+	max-height: 120px;
+	overflow-y: auto;
+}
+
+.llm-permission-buttons {
+	display: flex;
+	gap: var(--size-4-2);
+	justify-content: flex-end;
+}
+
+button.llm-permission-deny {
+	background-color: transparent;
+	border: var(--border-width) solid var(--background-modifier-border);
+	color: var(--text-muted);
+}
+
+button.llm-permission-deny:hover {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+	box-shadow: none;
+}
+
+button.llm-permission-allow {
+	/* mod-cta provides accent background; just ensure sizing */
+	padding: var(--size-4-1) var(--size-4-3);
 }
 
 .llm-status-bar-button:hover {
@@ -1219,4 +1306,169 @@ button.llm-scan-button.is-active:hover {
 	font-size: var(--font-ui-small);
 	color: var(--text-muted);
 	text-align: center;
+}
+
+/* ── File Selector Modal ──────────────────────────────────────────────────── */
+
+.llm-file-selector-list {
+	max-height: 400px;
+	overflow-y: auto;
+	margin-top: var(--size-4-3);
+	margin-bottom: var(--size-4-3);
+}
+
+.llm-file-selector-buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--size-4-2);
+	margin-top: var(--size-4-3);
+}
+
+.llm-file-selector-item {
+	display: flex;
+	align-items: center;
+	padding: var(--size-4-2);
+	border-bottom: var(--border-width) solid var(--background-modifier-border);
+}
+
+.llm-file-selector-item:last-child {
+	border-bottom: none;
+}
+
+.llm-file-selector-checkbox {
+	margin-right: var(--size-4-2);
+	flex-shrink: 0;
+}
+
+.llm-file-selector-info {
+	flex: 1;
+	min-width: 0;
+}
+
+.llm-file-selector-name {
+	font-weight: var(--font-medium);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.llm-file-selector-path {
+	font-size: var(--font-ui-smaller);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.llm-file-selector-count {
+	margin-top: var(--size-4-3);
+	text-align: center;
+	font-weight: var(--font-medium);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+/* ── Dedicated Settings Modal ─────────────────────────────────────────────── */
+
+/* Fallback size when opened outside the settings panel. */
+.llm-dedicated-settings-modal {
+	width: min(960px, 94vw);
+	height: min(740px, 88vh);
+}
+
+/* Matches .modal.mod-settings .vertical-tab-header in app.css exactly,
+   since our modal uses .llm-dedicated-settings-modal instead of .mod-settings. */
+.llm-dedicated-settings-modal .vertical-tab-header {
+	flex: 0 0 25%;
+	min-width: 180px;
+	max-width: 250px;
+	overflow: auto;
+	border-inline-end: var(--border-width) solid var(--divider-color);
+}
+
+/* Tab section header — sits above the first setting-group card. */
+.llm-dedicated-settings-tab-header {
+	margin-bottom: var(--size-4-4);
+}
+
+/* Re-use Obsidian's own h2 sizing / weight from the settings panel. */
+.llm-dedicated-settings-tab-title {
+	font-size: var(--h2-size);
+	font-weight: var(--h2-weight);
+	color: var(--h2-color);
+	margin: 0 0 var(--size-4-1);
+}
+
+.llm-dedicated-settings-tab-desc {
+	margin: 0;
+}
+
+
+
+/* Ollama discovered-models helper text. */
+.llm-settings-ollama-models {
+	margin: 0 0 var(--size-4-3);
+}
+
+/* About tab credits block. */
+.llm-dedicated-settings-about-credits {
+	margin-top: var(--size-4-6);
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-1);
+}
+
+.llm-dedicated-settings-about-title {
+	font-size: var(--h3-size);
+	font-weight: var(--h3-weight);
+	color: var(--text-normal);
+	margin: 0;
+}
+
+/* RAG cited sources panel */
+.llm-rag-sources {
+	margin-top: var(--size-4-2);
+	border-top: 1px solid var(--background-modifier-border);
+	padding-top: var(--size-4-2);
+}
+
+.llm-rag-sources-summary {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	cursor: pointer;
+	user-select: none;
+	list-style: none;
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+}
+
+.llm-rag-sources-summary::before {
+	content: "›";
+	display: inline-block;
+	transition: transform 100ms ease;
+}
+
+details[open] .llm-rag-sources-summary::before {
+	transform: rotate(90deg);
+}
+
+.llm-rag-sources-list {
+	margin: var(--size-4-2) 0 0 var(--size-4-4);
+	padding: 0;
+	list-style: disc;
+}
+
+.llm-rag-sources-list li {
+	margin-bottom: var(--size-4-1);
+}
+
+.llm-rag-source-link {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-accent);
+	cursor: pointer;
+	text-decoration: none;
+}
+
+.llm-rag-source-link:hover {
+	text-decoration: underline;
 }

@@ -45,10 +45,6 @@ export class FileSelector extends Modal {
 		const fileListContainer = contentEl.createDiv({
 			cls: "llm-file-selector-list",
 		});
-		fileListContainer.style.maxHeight = "400px";
-		fileListContainer.style.overflowY = "auto";
-		fileListContainer.style.marginTop = "1em";
-		fileListContainer.style.marginBottom = "1em";
 
 		this.renderFileList(fileListContainer);
 
@@ -56,10 +52,6 @@ export class FileSelector extends Modal {
 		const buttonContainer = contentEl.createDiv({
 			cls: "llm-file-selector-buttons",
 		});
-		buttonContainer.style.display = "flex";
-		buttonContainer.style.justifyContent = "flex-end";
-		buttonContainer.style.gap = "0.5em";
-		buttonContainer.style.marginTop = "1em";
 
 		const cancelButton = buttonContainer.createEl("button", {
 			text: "Cancel",
@@ -117,17 +109,13 @@ export class FileSelector extends Modal {
 			const fileItem = fileListContainer.createDiv({
 				cls: "llm-file-selector-item",
 			});
-			fileItem.style.display = "flex";
-			fileItem.style.alignItems = "center";
-			fileItem.style.padding = "0.5em";
-			fileItem.style.borderBottom = "1px solid var(--background-modifier-border)";
 
 			// Checkbox
 			const checkbox = fileItem.createEl("input", {
 				type: "checkbox",
+				cls: "llm-file-selector-checkbox",
 			});
 			checkbox.checked = this.selectedFiles.has(file.path);
-			checkbox.style.marginRight = "0.5em";
 			checkbox.addEventListener("change", () => {
 				if (checkbox.checked) {
 					this.selectedFiles.add(file.path);
@@ -137,28 +125,23 @@ export class FileSelector extends Modal {
 			});
 
 			// File info
-			const fileInfo = fileItem.createDiv();
-			fileInfo.style.flex = "1";
+			const fileInfo = fileItem.createDiv({ cls: "llm-file-selector-info" });
 
-			const fileName = fileInfo.createEl("div", {
+			fileInfo.createEl("div", {
 				text: file.name,
+				cls: "llm-file-selector-name",
 			});
-			fileName.style.fontWeight = "500";
 
-			const filePath = fileInfo.createEl("div", {
+			fileInfo.createEl("div", {
 				text: file.path,
-				cls: "llm-text-muted",
+				cls: "llm-file-selector-path llm-text-muted",
 			});
-			filePath.style.fontSize = "0.9em";
 		}
 
 		// Selected count
 		const countDiv = fileListContainer.createDiv({
 			cls: "llm-file-selector-count",
 		});
-		countDiv.style.marginTop = "1em";
-		countDiv.style.textAlign = "center";
-		countDiv.style.fontWeight = "500";
 		countDiv.setText(`Selected: ${this.selectedFiles.size} file(s)`);
 	}
 

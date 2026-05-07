@@ -148,11 +148,7 @@ export class FAB {
 			chatContainer,
 			header
 		);
-		settingsContainer.generateSettingsContainer(
-			settingsContainerDiv,
-			header,
-			() => chatContainer.syncChips()
-		);
+		settingsContainer.generateSettingsContainer(settingsContainerDiv);
 
 		let button = new ButtonComponent(fabContainer);
 		button
@@ -161,6 +157,10 @@ export class FAB {
 			.onClick(() => {
 				if (viewArea.style.display === "none") {
 					viewArea.style.display = "flex";
+					// Sync the model dropdown to reflect any settings changes made
+					// while the FAB was closed (the container is built once, so it
+					// won't pick up new defaults automatically).
+					chatContainer.syncModelDropdown();
 					// Clamp any persisted oversized height after the element is
 					// visible and laid out so getBoundingClientRect() is accurate.
 					requestAnimationFrame(() => {
@@ -182,6 +182,11 @@ export class FAB {
 		document.body
 			.querySelector(ROOT_WORKSPACE_CLASS)
 			?.insertAdjacentElement("afterbegin", fabContainer);
+	}
+
+	/** Delegates to ChatContainer so the empty state re-renders with the latest settings. */
+	refreshEmptyState() {
+		this.chatContainer?.refreshEmptyState();
 	}
 
 	removeFab() {

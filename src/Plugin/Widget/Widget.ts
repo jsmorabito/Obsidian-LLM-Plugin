@@ -3,9 +3,9 @@ import { Header } from "Plugin/Components/Header";
 import { HistoryContainer } from "Plugin/Components/HistoryContainer";
 import { SettingsContainer } from "Plugin/Components/SettingsContainer";
 import LLMPlugin from "main";
-import { ItemView, WorkspaceLeaf } from "obsidian";
+import { ItemView, Notice, WorkspaceLeaf } from "obsidian";
 import { classNames } from "utils/classNames";
-import { getSettingType, getViewInfo, setView } from "utils/utils";
+import { getSettingType, getViewInfo, setHistoryFilePath, setView } from "utils/utils";
 import { models } from "utils/models";
 
 export const TAB_VIEW_TYPE = "tab-view";
@@ -76,6 +76,48 @@ export class WidgetView extends ItemView {
 		this.header?.setTitle(displayTitle);
 	}
 
+	/**
+	 * Load a chat conversation directly from a vault markdown file path.
+	 * Used when the user clicks the "Open in chat widget" action button on a chat file.
+	 */
+	async loadChatFile(filePath: string): Promise<void> {
+		if (!this.chatContainer || !this.header) return;
+		const settingType = getSettingType("widget");
+
+		try {
+			const { meta, messages } = await this.plugin.chatHistory.load(filePath);
+
+			this.chatContainer.resetChat();
+			this.chatContainer.messageStore.setMessages(messages);
+			this.chatContainer.generateIMLikeMessages(messages);
+
+			if (this.chatContainerDiv) this.chatContainerDiv.show();
+			if (this.chatHistoryContainer) this.chatHistoryContainer.hide();
+
+			// Sync model settings from the file's stored model
+			if (meta.model && models[meta.model]) {
+				const m = models[meta.model];
+				this.plugin.settings[settingType].model = meta.model;
+				this.plugin.settings[settingType].modelName = meta.model;
+				this.plugin.settings[settingType].modelType = m.type;
+				this.plugin.settings[settingType].modelEndpoint = m.endpoint;
+				this.plugin.settings[settingType].endpointURL = m.url;
+			}
+
+			// Track the file path so subsequent sends update the right file
+			setHistoryFilePath(this.plugin, "widget", filePath);
+			this.chatContainer.currentHistoryFilePath = filePath;
+
+			this.header.setHeader(this.plugin.settings[settingType].modelName);
+			this.header.resetHistoryButton();
+			this.header.setTitle(meta.title ?? filePath);
+			this.header.showTitle();
+		} catch (e) {
+			console.error("[WidgetView] Failed to load chat file:", e);
+			new Notice("Failed to load conversation.");
+		}
+	}
+
 	async onOpen() {
 		this.icon = "bot-message-square"
 		const container = this.containerEl.children[1];
@@ -140,11 +182,7 @@ export class WidgetView extends ItemView {
 			chatContainer,
 			header
 		);
-		settingsContainer.generateSettingsContainer(
-			settingsContainerDiv,
-			header,
-			() => chatContainer.syncChips()
-		);
+		settingsContainer.generateSettingsContainer(settingsContainerDiv);
 
 		// Auto-load a conversation if one was pending (set by "Open in sidebar/tab" from the FAB).
 		const pendingIndex = this.plugin.pendingWidgetHistoryIndex;
@@ -152,6 +190,18 @@ export class WidgetView extends ItemView {
 			this.plugin.pendingWidgetHistoryIndex = -1;
 			this.loadConversation(pendingIndex);
 		}
+
+		// Auto-load a chat file if one was pending (set by the view-action button on chat files).
+		const pendingFilePath = this.plugin.pendingWidgetFilePath;
+		if (pendingFilePath) {
+			this.plugin.pendingWidgetFilePath = null;
+			await this.loadChatFile(pendingFilePath);
+		}
+	}
+
+	/** Delegates to ChatContainer so the empty state re-renders with the latest settings. */
+	refreshEmptyState() {
+		this.chatContainer?.refreshEmptyState();
 	}
 
 	async onClose() {
