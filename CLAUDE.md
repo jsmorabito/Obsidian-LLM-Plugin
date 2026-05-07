@@ -14,7 +14,7 @@ Output is bundled to `main.js` in the root directory.
 
 ## Architecture Overview
 
-This is an Obsidian plugin that provides LLM chat interfaces with support for OpenAI, Anthropic Claude, Google Gemini, Mistral AI, local Ollama, and local GPT4All.
+This is an Obsidian plugin that provides LLM chat interfaces with support for OpenAI, Anthropic Claude, Google Gemini, Mistral AI, local Ollama, local LM Studio, and local GPT4All.
 
 ### Entry Point and Plugin Lifecycle
 
@@ -51,7 +51,7 @@ Each view composes these shared components from `src/Plugin/Components/`:
 
 1. User input in `ChatContainer` triggers `handleGenerateClick()`
 2. Message added to MessageStore, which notifies all subscribers
-3. API call made based on selected provider (OpenAI/Claude/Gemini/Mistral/Ollama/GPT4All)
+3. API call made based on selected provider (OpenAI/Claude/Gemini/Mistral/Ollama/LM Studio/GPT4All)
 4. Streaming response updates UI in real-time
 5. Conversation saved to History
 
@@ -68,15 +68,16 @@ Provider SDKs used:
 - `@anthropic-ai/sdk` - Claude models + Claude Code (agent SDK)
 - `@google/generative-ai` - Gemini models
 - Mistral — uses `openai` SDK with custom baseURL (`https://api.mistral.ai/v1`)
-- Ollama — uses `openai` SDK with custom baseURL (default `http://localhost:11434/v1`); models discovered dynamically
+- Ollama — uses `openai` SDK with custom baseURL (default `http://localhost:11434/v1`); models discovered dynamically via `fetchOllamaModels()`
+- LM Studio — uses `openai` SDK with custom baseURL (default `http://localhost:1234/v1`); models discovered dynamically via `fetchLMStudioModels()`; **must use `encoding_format: "float"` for embeddings** — the OpenAI SDK's default base64 format triggers a known GGUF bug in LM Studio that returns all-zero vectors (lmstudio-ai/lmstudio-bug-tracker#1647)
 - GPT4All connects to local server on port 4891
 
 ### RAG / Vault Search
 
 The plugin supports semantic search over the user's vault via three classes in `src/RAG/`:
 
-- **`VectorStore.ts`** — Persists embeddings as a flat JSON file at `.obsidian/plugins/Obsidian-LLM-Plugin/rag-index.json`. Provides cosine similarity search and incremental updates (skips files whose `mtime` hasn't changed).
-- **`EmbeddingService.ts`** — Provider-agnostic embedding generation. Supports OpenAI (`text-embedding-3-small`), Gemini (`text-embedding-004`), and Ollama (via the OpenAI-compatible `/v1/embeddings` endpoint). Reuses API keys already stored in plugin settings.
+- **`VectorStore.ts`** — Persists embeddings as a flat JSON file (path passed via constructor). Provides cosine similarity search and incremental updates (skips files whose `mtime` hasn't changed). `save()` ensures the parent directory exists before writing — always use `vault.adapter.mkdir()` guard before any `adapter.write()` to a plugin-relative path, as the directory may not exist on fresh installs.
+- **`EmbeddingService.ts`** — Provider-agnostic embedding generation. Supports OpenAI (`text-embedding-3-small`), Gemini (`text-embedding-004`), Ollama, and LM Studio (all via the OpenAI-compatible `/v1/embeddings` endpoint). LM Studio calls must pass `encoding_format: "float"` explicitly. Reuses API keys/hosts already stored in plugin settings.
 - **`VaultIndexer.ts`** — Orchestrates indexing (chunking by paragraph, ~1500 chars per chunk with file path + heading prefix) and exposes `semanticSearch(query, topK)` which returns a formatted markdown context block. Calls `EmbeddingService.checkOllamaModel()` before indexing to surface a clear pull-command error if the Ollama model isn't available.
 
 **How it integrates:**
@@ -97,7 +98,7 @@ The plugin supports semantic search over the user's vault via three classes in `
 
 ### Constants Convention
 
-All endpoint type strings live in `src/utils/constants.ts` and must be imported as constants rather than compared against raw string literals. The full set of endpoint constants is: `chat`, `messages`, `images`, `claudeCodeEndpoint`. Provider type constants are: `openAI`, `claude`, `claudeCode`, `gemini`, `mistral`, `ollama`, `GPT4All`.
+All endpoint type strings live in `src/utils/constants.ts` and must be imported as constants rather than compared against raw string literals. The full set of endpoint constants is: `chat`, `messages`, `images`, `claudeCodeEndpoint`. Provider type constants are: `openAI`, `claude`, `claudeCode`, `gemini`, `mistral`, `ollama`, `lmStudio`, `GPT4All`.
 
 ### CSS / Styling Convention
 
