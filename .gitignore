@@ -31,3 +31,6 @@ data.json
 __pycache__/
 .beads/
 data-backup.json
+
+# RAG index — generated at runtime from vault contents, vault-specific and large
+rag-index.json
