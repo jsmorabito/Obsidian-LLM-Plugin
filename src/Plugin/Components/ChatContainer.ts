@@ -261,10 +261,7 @@ export class ChatContainer {
 		if (endpoint === messages) {
 			const params: ChatParams = {
 				prompt: this.prompt,
-				// The Claude API accepts the most recent user message
-				// as well as an optional most recent assistant message.
-				// This initial approach only sends the most recent user message.
-				messages: messagesForParams.slice(-1),
+				messages: messagesForParams,
 				model,
 				temperature:
 					this.plugin.settings[settingType].chatSettings.temperature,
