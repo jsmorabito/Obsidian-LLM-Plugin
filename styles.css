@@ -315,14 +315,16 @@ button.llm-send-button:disabled {
 
 /* Stop mode — shown while the model is generating */
 button.llm-send-button.llm-stop-mode {
-	background-color: var(--color-red);
-	color: white;
+	background-color: var(--background-primary);
+	color: var(--text-muted);
+	border: var(--border-width) solid var(--background-modifier-border);
 }
 
 button.llm-send-button.llm-stop-mode:hover {
-	background-color: var(--color-red);
-	opacity: 0.8;
-	color: white;
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+	border-color: var(--background-modifier-border-hover);
+	opacity: 1;
 }
 
 .llm-modal-send-button,
@@ -1020,6 +1022,29 @@ div.im-like-message.llm-widget-chat-message > p {
 	}
 }
 
+.llm-egg-passphrase {
+	width: 100%;
+}
+
+
+.llm-special-standing {
+	display: flex;
+	align-items: center;
+}
+
+.llm-special-standing svg {
+	image-rendering: pixelated;
+}
+
+.llm-special-animation {
+	display: flex;
+	margin-top: 0.4em;
+}
+
+.llm-special-animation svg {
+	image-rendering: pixelated;
+}
+
 .llm-icon-wrapper {
 	display: flex;
 	flex-direction: column;
@@ -1380,8 +1405,10 @@ button.llm-scan-button.is-active:hover {
 	box-shadow: none;
 }
 
-button.llm-scan-button.llm-hidden {
-	display: none;
+/* Generic visibility utility — toggle with el.toggleClass("llm-hidden", …).
+   !important so it overrides a base class's own display (flex/block). */
+.llm-hidden {
+	display: none !important;
 }
 
 /* STATUS BAR BUTTON */
@@ -1474,6 +1501,32 @@ button.llm-permission-deny:hover {
 button.llm-permission-allow {
 	/* mod-cta provides accent background; just ensure sizing */
 	padding: var(--size-4-1) var(--size-4-3);
+}
+
+/* PERMISSION DENIED NOTICE (Claude Code auto-block) */
+
+.llm-permission-denied-notice {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	padding: var(--size-4-2) var(--size-4-3);
+	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-error-hover);
+	border: var(--border-width) solid var(--background-modifier-error);
+	color: var(--text-error);
+	font-size: var(--font-ui-small);
+	margin: var(--size-4-2) 0;
+}
+
+.llm-permission-denied-icon {
+	display: flex;
+	align-items: center;
+	flex-shrink: 0;
+}
+
+.llm-permission-denied-icon svg {
+	width: var(--icon-s);
+	height: var(--icon-s);
 }
 
 /* MEMORY SCOPE PICKER (extends permission card) */
@@ -2021,6 +2074,35 @@ details[open] .llm-tool-calls-chevron {
 	font-size: var(--font-ui-smaller);
 	color: var(--text-faint);
 }
+
+/* ── Shell command warning modal ─────────────────────────────────────────── */
+
+.llm-shell-warning-note {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	padding: var(--size-4-2) var(--size-4-3);
+	border-left: 3px solid var(--color-orange);
+	margin-top: var(--size-4-2);
+}
+
+.llm-shell-warning-buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--size-4-2);
+	margin-top: var(--size-4-4);
+}
+
+/* ── API key test status ──────────────────────────────────────────────────── */
+
+.llm-api-test-status {
+	margin-top: var(--size-4-1);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-medium);
+}
+
+.llm-api-test-running { color: var(--text-muted); }
+.llm-api-test-ok      { color: var(--color-green); }
+.llm-api-test-fail    { color: var(--color-red); }
 
 /* ── Active skill indicator (shown above an assistant message) ────────────── */
 
@@ -2946,4 +3028,43 @@ button.llm-mic-button.llm-mic-transcribing {
 	color: var(--text-accent);
 	background-color: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
 	border-color: transparent;
+}
+
+/* ── MCP Server settings ────────────────────────────────────────────────── */
+
+.llm-mcp-token-field {
+	width: 100%;
+	font-family: var(--font-monospace);
+}
+
+.llm-mcp-config-snippet {
+	user-select: text;
+	-webkit-user-select: text;
+	cursor: text;
+	background: var(--background-secondary);
+	border-radius: var(--radius-s);
+	padding: var(--size-4-2) var(--size-4-3);
+	margin: var(--size-4-2) 0;
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-normal);
+	white-space: pre;
+	overflow-x: auto;
+}
+
+/* MCP write-tool permission modal */
+.llm-mcp-permission-input {
+	user-select: text;
+	-webkit-user-select: text;
+	cursor: text;
+	background: var(--background-secondary);
+	border-radius: var(--radius-s);
+	padding: var(--size-4-2) var(--size-4-3);
+	margin: var(--size-4-2) 0;
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+	white-space: pre-wrap;
+	word-break: break-word;
+	max-height: 240px;
+	overflow-y: auto;
 }
