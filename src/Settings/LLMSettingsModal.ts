@@ -2714,7 +2714,11 @@ export class LLMSettingsModal extends Modal {
 
 		new Setting(connGroup)
 			.setName("Port")
-			.setDesc("Port the server listens on (127.0.0.1 only). Restarts the server when changed.")
+			.setDesc(
+				"Port the server listens on (127.0.0.1 only). Restarts the server when changed. " +
+				"If the port is already taken (e.g. by another vault's MCP server), the plugin automatically " +
+				"tries the next ports up and updates this field to whichever one actually bound."
+			)
 			.addText((text) => {
 				text.setValue(String(s.port)).onChange(async (value) => {
 					const port = parseInt(value, 10);
@@ -2722,6 +2726,12 @@ export class LLMSettingsModal extends Modal {
 					this.plugin.settings.mcpServerSettings.port = port;
 					await this.plugin.saveSettings();
 					await this.plugin.initMcpServer();
+					// initMcpServer() may have fallen back to a different port (and persisted it) if this
+					// one was taken. Only re-render in that case — doing it unconditionally would yank
+					// focus out of this field on every keystroke since onChange fires per-input event.
+					if (this.plugin.settings.mcpServerSettings.port !== port) {
+						this.renderTab("mcp-server");
+					}
 				});
 			});
 

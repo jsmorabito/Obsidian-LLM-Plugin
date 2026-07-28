@@ -1037,8 +1037,17 @@ export default class LLMPlugin extends Plugin {
 		try {
 			const { McpTransportServer } = await import("mcp/transport");
 			const server = new McpTransportServer(this.app, () => this.settings.mcpServerSettings.token, this.manifest.version);
-			await server.start(s.port);
+			const requestedPort = s.port;
+			const boundPort = await server.start(requestedPort);
 			this.mcpServer = server;
+			if (boundPort !== requestedPort) {
+				this.settings.mcpServerSettings.port = boundPort;
+				await this.saveSettings();
+				new Notice(
+					`MCP server: port ${requestedPort} was already in use (likely another vault) — started on ${boundPort} instead.`,
+					6000
+				);
+			}
 		} catch (e) {
 			logger.error("[MCP] Failed to start server:", e);
 			new Notice(`Failed to start MCP server on port ${s.port}: ${e instanceof Error ? e.message : String(e)}`, 6000);

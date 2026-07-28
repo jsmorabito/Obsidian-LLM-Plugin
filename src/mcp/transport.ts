@@ -89,25 +89,41 @@ export class McpTransportServer {
 		private version: string
 	) {}
 
-	start(port: number): Promise<void> {
+	/** How many consecutive ports to probe (port, port+1, port+2, …) before giving up on EADDRINUSE. */
+	private static readonly MAX_PORT_ATTEMPTS = 20;
+
+	/** Starts the server, walking forward from `port` on EADDRINUSE (e.g. another vault already bound it). Resolves with whichever port actually got bound. */
+	start(port: number): Promise<number> {
 		if (!Platform.isDesktop) return Promise.reject(new Error("MCP server requires Obsidian Desktop."));
 		// eslint-disable-next-line @typescript-eslint/no-require-imports -- Node builtin; guarded by the Platform.isDesktop check above
 		const http = require("http") as typeof import("http");
-		return new Promise((resolve, reject) => {
-			const server = http.createServer((req, res) => {
-				this.handleRequest(req, res).catch((e) => {
-					logger.error("[MCP] Request handling failed:", e);
-					sendJsonRpcError(res, 500, "Internal server error");
+
+		const tryListen = (candidatePort: number, attemptsLeft: number): Promise<number> => {
+			return new Promise((resolve, reject) => {
+				const server = http.createServer((req, res) => {
+					this.handleRequest(req, res).catch((e) => {
+						logger.error("[MCP] Request handling failed:", e);
+						sendJsonRpcError(res, 500, "Internal server error");
+					});
+				});
+				server.once("error", (e: Error & { code?: string }) => {
+					server.close();
+					if (e.code === "EADDRINUSE" && attemptsLeft > 0) {
+						resolve(tryListen(candidatePort + 1, attemptsLeft - 1));
+					} else {
+						reject(e);
+					}
+				});
+				server.listen(candidatePort, "127.0.0.1", () => {
+					server.removeAllListeners("error");
+					server.on("error", (e) => logger.error("[MCP] Server error:", e));
+					this.httpServer = server;
+					resolve(candidatePort);
 				});
 			});
-			server.once("error", reject);
-			server.listen(port, "127.0.0.1", () => {
-				server.removeListener("error", reject);
-				server.on("error", (e) => logger.error("[MCP] Server error:", e));
-				this.httpServer = server;
-				resolve();
-			});
-		});
+		};
+
+		return tryListen(port, McpTransportServer.MAX_PORT_ATTEMPTS);
 	}
 
 	stop(): Promise<void> {
