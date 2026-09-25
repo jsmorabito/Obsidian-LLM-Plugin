@@ -220,7 +220,7 @@ export class ChatHistory {
 				}
 				const toolCalls = toolCallsByTurn?.get(assistantIdx);
 				if (toolCalls?.length) {
-					body += this.renderToolCallBlock(toolCalls);
+					body += ChatHistory.renderToolCallBlock(toolCalls);
 				}
 				body += `${msg.content}\n\n`;
 				assistantIdx++;
@@ -242,8 +242,11 @@ export class ChatHistory {
 		return `> [!tip]- Skill: ${skillId}\n\n`;
 	}
 
-	/** Render a collapsible callout listing the tool calls for one agent turn. */
-	private renderToolCallBlock(toolCalls: ToolCallRecord[]): string {
+	/**
+	 * Render a collapsible callout listing the tool calls for one agent turn.
+	 * Static so loop run logs (`LoopRunner`) write the identical format.
+	 */
+	static renderToolCallBlock(toolCalls: ToolCallRecord[]): string {
 		const count = toolCalls.length;
 		const label = count === 1 ? "1 tool call" : `${count} tool calls`;
 		let block = `> [!info]- ${label}\n`;
