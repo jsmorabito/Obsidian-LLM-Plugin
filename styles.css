@@ -3127,3 +3127,61 @@ button.llm-mic-button.llm-mic-transcribing {
 	max-height: 240px;
 	overflow-y: auto;
 }
+
+/* ── Loops (Settings → Loops) ─────────────────────────────────────────────── */
+
+.llm-loop-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-1);
+	padding: var(--size-4-2) 0;
+}
+
+.llm-loop-row {
+	align-items: flex-start;
+}
+
+.llm-loop-row.llm-loop-disabled .llm-loop-info {
+	opacity: 0.6;
+}
+
+.llm-loop-info {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-1);
+	min-width: 0;
+}
+
+.llm-loop-name {
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+}
+
+.llm-loop-meta {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.llm-loop-warning {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-warning);
+}
+
+.llm-loop-actions {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+}
+
+.llm-loop-verdict-pass {
+	color: var(--text-success);
+}
+
+.llm-loop-verdict-fail,
+.llm-loop-verdict-error {
+	color: var(--text-error);
+}
+
+.llm-loop-verdict-muted {
+	color: var(--text-muted);
+}

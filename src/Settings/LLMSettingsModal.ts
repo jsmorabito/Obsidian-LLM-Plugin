@@ -23,6 +23,7 @@ import { FAB } from "Plugin/FAB/FAB";
 import { ChatModal2 } from "Plugin/Modal/ChatModal2";
 import { EmbeddingService, EmbeddingProvider, DEFAULT_EMBEDDING_MODELS } from "RAG/EmbeddingService";
 import { ALL_TOOL_DEFINITIONS } from "services/ObsidianToolRegistry";
+import { LoopsContainer } from "Plugin/Components/LoopsContainer";
 import { ensureSDKInstalled, isSDKInstalled } from "services/ClaudeAgentSDKInstaller";
 
 type APIKeyType = "claude" | "gemini" | "openai" | "mistral";
@@ -116,6 +117,7 @@ export class LLMSettingsModal extends Modal {
 				{ id: "embeddings",     label: "Embeddings",      icon: "database",        featureGate: "vaultSearch" },
 				{ id: "projects",       label: "Projects",        icon: "folder-open",     featureGate: "projects" },
 				{ id: "assistants",     label: "Assistants",      icon: "bot",             featureGate: "assistants" },
+				{ id: "loops",          label: "Loops",           icon: "repeat",          featureGate: "loops" },
 				{ id: "transcription",  label: "Transcription",   icon: "mic",             featureGate: "transcription" },
 				{ id: "mcp-server",     label: "MCP Server",      icon: "server",          featureGate: "mcpServer" },
 			],
@@ -378,6 +380,7 @@ export class LLMSettingsModal extends Modal {
 			case "memory":        this.renderMemory();        break;
 			case "projects":      this.renderProjects();      break;
 			case "assistants":      this.renderAssistants();      break;
+			case "loops":           this.renderLoops();           break;
 			case "obsidian-agent":  this.renderObsidianAgent();   break;
 			case "transcription":   this.renderTranscription();   break;
 			case "mcp-server":      this.renderMcpServer();       break;
@@ -613,6 +616,22 @@ export class LLMSettingsModal extends Modal {
 				},
 			},
 			{
+				key: "loops",
+				name: "Loops",
+				desc: "Saved, repeatable agent jobs defined as LOOP.md files. Run by hand, on startup, or on an interval, with an optional independent verifier. Loops can only write into their own drafts folder.",
+				onEnable: async () => {
+					await this.plugin.reinitLoopManager();
+				},
+				onDisable: async () => {
+					this.plugin.loopRunner.abortAll();
+					if (this.activeTab === "loops") {
+						this.activeTab = "general";
+						this.renderTab("general");
+					}
+					await this.plugin.saveSettings();
+				},
+			},
+			{
 				key: "memory",
 				name: "Memory",
 				desc: "Automatically extract and recall facts, preferences, and context across conversations. Requires Embeddings to be enabled.",
@@ -695,6 +714,7 @@ export class LLMSettingsModal extends Modal {
 									memory: false,
 									vaultSearch: false,
 									mcpServer: false,
+									loops: false,
 								};
 							}
 							this.plugin.settings.featureSettings[def.key] = value;
@@ -764,6 +784,7 @@ export class LLMSettingsModal extends Modal {
 					await this.plugin.reinitSkillRegistry();
 					await this.plugin.reinitProjectManager();
 					await this.plugin.reinitAssistantManager();
+					await this.plugin.reinitLoopManager();
 				});
 			});
 
@@ -2107,6 +2128,26 @@ export class LLMSettingsModal extends Modal {
 					});
 			});
 		}
+	}
+
+	// ── Loops ─────────────────────────────────────────────────────────────────
+
+	private renderLoops() {
+		const el = this.mainContentEl;
+		const group = this.addSettingGroup(el, "Loops");
+		if (!this.plugin.settings.rootVaultFolder) {
+			group.createDiv({ cls: "pane-empty", text: "Set a Root vault folder in General to use Loops." });
+			return;
+		}
+		new Setting(group)
+			.setName("Loops folder")
+			.setDesc(`Each loop is ${this.plugin.loopsFolder}/<loop-name>/LOOP.md. Its STATE.md, runs/, and drafts/ live alongside it.`)
+			.addExtraButton((btn) => {
+				btn.setIcon("refresh-cw")
+					.setTooltip("Rescan loops")
+					.onClick(() => void this.plugin.reinitLoopManager());
+			});
+		new LoopsContainer(this.plugin).render(group);
 	}
 
 	// ── Obsidian Agent ────────────────────────────────────────────────────────
