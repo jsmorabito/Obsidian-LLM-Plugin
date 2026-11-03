@@ -39,6 +39,23 @@ export interface AgentCallbacks {
 	onUsage?: (inputTokens: number, outputTokens: number) => void;
 }
 
+/**
+ * Returns a denial reason when a tool call must be blocked, or null to fall
+ * through to the normal permission gate. Used by headless loop runs to confine
+ * writes to a drafts folder regardless of what the model asks for.
+ */
+export type ToolGuard = (toolName: string, input: Record<string, unknown>) => string | null;
+
+/** Optional extras for callers that run AgentLoop outside the chat UI. */
+export interface AgentLoopOptions {
+	toolGuard?: ToolGuard;
+	/**
+	 * OpenAI-compatible path only: send `stream_options.include_usage` so the
+	 * server reports token usage. Off by default — some servers reject it.
+	 */
+	requestUsage?: boolean;
+}
+
 export class AgentLoop {
 	private registry: ObsidianToolRegistry;
 	/**
@@ -50,6 +67,8 @@ export class AgentLoop {
 	private disabledTools: string[];
 	/** Maximum tool-call/execute cycles per agent turn before the loop stops. */
 	private maxToolCalls: number;
+	private toolGuard: ToolGuard | null;
+	private requestUsage: boolean;
 
 	constructor(
 		private app: App,
@@ -63,12 +82,15 @@ export class AgentLoop {
 		extraSetup?: (registry: ObsidianToolRegistry) => void,
 		chatHistory?: ChatHistory,
 		searxngService?: SearxngService | null,
+		options?: AgentLoopOptions,
 	) {
 		this.registry = new ObsidianToolRegistry(app, vaultIndexer ?? undefined, chatHistory, searxngService);
 		extraSetup?.(this.registry);
 		this.allowedTools = allowedTools ?? [];
 		this.disabledTools = disabledTools ?? [];
 		this.maxToolCalls = maxToolCalls ?? 10;
+		this.toolGuard = options?.toolGuard ?? null;
+		this.requestUsage = options?.requestUsage ?? false;
 	}
 
 	/** Return registry tools, filtered by allowedTools (skill restriction) and disabledTools (settings). */
@@ -97,6 +119,10 @@ export class AgentLoop {
 				return true;
 			case "read-only":
 				return risk === "safe";
+			case "staging":
+				// Headless loop runs: writes are allowed only after the toolGuard
+				// has already confined them; danger-tier tools are never allowed.
+				return risk !== "danger";
 			case "ask-everything":
 				return this.showPermissionUI(toolName, description, input);
 			case "ask":
@@ -194,6 +220,9 @@ export class AgentLoop {
 			}
 
 			callbacks.onUsage?.(totalInputTokens, totalOutputTokens);
+			// An abort raised mid-turn (user stop, or a budget stop from onUsage)
+			// must not fall through to executing this turn's tool calls.
+			if (signal?.aborted) break;
 
 			// Build typed content array for the assistant turn
 			const assistantContent: Anthropic.ContentBlockParam[] = [];
@@ -231,11 +260,14 @@ export class AgentLoop {
 
 				callbacks.onToolStart?.(block.name, input);
 				let resultText: string;
+				const denial = this.toolGuard?.(block.name, input) ?? null;
 				if (!this.registry.isToolAvailable(block.name)) {
 					// Platform-unavailable tool (e.g. Node-backed on mobile): skip the
 					// permission card and surface the registry's error to the model.
 					const result = await this.registry.executeTool(block.name, input);
 					resultText = `Error: ${result.error}`;
+				} else if (denial) {
+					resultText = `Action denied: ${denial}`;
 				} else if (await this.checkPermission(block.name, input)) {
 					const result = await this.registry.executeTool(block.name, input);
 					resultText = result.success ? (result.result ?? "Done.") : `Error: ${result.error}`;
@@ -286,6 +318,8 @@ export class AgentLoop {
 		let firstCall = true;
 		const toolSummaries: string[] = [];
 		let toolCallCount = 0;
+		let totalInputTokens = 0;
+		let totalOutputTokens = 0;
 
 		while (true) {
 			if (signal?.aborted) break;
@@ -301,6 +335,7 @@ export class AgentLoop {
 				...(params.tokens ? { max_tokens: params.tokens } : {}),
 				temperature: params.temperature,
 				stream: true,
+				...(this.requestUsage ? { stream_options: { include_usage: true } } : {}),
 			});
 
 			// Accumulate text and tool call deltas
@@ -314,6 +349,10 @@ export class AgentLoop {
 
 			for await (const chunk of stream) {
 				if (signal?.aborted) break;
+				if (chunk.usage) {
+					totalInputTokens += chunk.usage.prompt_tokens ?? 0;
+					totalOutputTokens += chunk.usage.completion_tokens ?? 0;
+				}
 				const choice = chunk.choices[0];
 				if (!choice) continue;
 
@@ -341,6 +380,12 @@ export class AgentLoop {
 
 				if (choice.finish_reason) finishReason = choice.finish_reason;
 			}
+
+			if (totalInputTokens > 0 || totalOutputTokens > 0) {
+				callbacks.onUsage?.(totalInputTokens, totalOutputTokens);
+			}
+			// See runAnthropic: never execute tools once aborted.
+			if (signal?.aborted) break;
 
 			const toolCalls = Object.values(toolCallsAcc);
 			if (finishReason !== "tool_calls" || toolCalls.length === 0) break;
@@ -370,11 +415,14 @@ export class AgentLoop {
 				try { input = JSON.parse(tc.arguments); } catch { /* ignore */ }
 
 				let resultText: string;
+				const denial = this.toolGuard?.(tc.name, input) ?? null;
 				if (!this.registry.isToolAvailable(tc.name)) {
 					// Platform-unavailable tool (e.g. Node-backed on mobile): skip the
 					// permission card and surface the registry's error to the model.
 					const result = await this.registry.executeTool(tc.name, input);
 					resultText = `Error: ${result.error}`;
+				} else if (denial) {
+					resultText = `Action denied: ${denial}`;
 				} else if (await this.checkPermission(tc.name, input)) {
 					const result = await this.registry.executeTool(tc.name, input);
 					resultText = result.success ? (result.result ?? "Done.") : `Error: ${result.error}`;

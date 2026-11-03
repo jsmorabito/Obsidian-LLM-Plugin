@@ -77,6 +77,7 @@ import {
 import { AgentLoop, AgentCallbacks } from "services/AgentLoop";
 import { getToolTier, effectivePermissionMode } from "Plugin/ObsidianAgent/ToolSupportTier";
 import OpenAI from "openai";
+import { createOpenAICompatibleClient } from "services/OpenAIClientFactory";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
 import { models, modelNames } from "utils/models";
@@ -1739,34 +1740,7 @@ export class ChatContainer extends Component {
 
 	/** Build the right OpenAI-compatible client for a given provider. */
 	private createOpenAIClient(modelType: string): OpenAI {
-		if (modelType === ollama) {
-			return new OpenAI({
-				apiKey: "ollama",
-				baseURL: `${this.plugin.settings.ollamaHost}/v1`,
-				dangerouslyAllowBrowser: true,
-				timeout: 30000,
-			});
-		}
-		if (modelType === lmStudio) {
-			return new OpenAI({
-				apiKey: "lm-studio",
-				baseURL: `${this.plugin.settings.lmStudioHost}/v1`,
-				dangerouslyAllowBrowser: true,
-				timeout: 30000,
-			});
-		}
-		if (modelType === mistral) {
-			return new OpenAI({
-				apiKey: this.plugin.settings.mistralAPIKey,
-				baseURL: "https://api.mistral.ai/v1",
-				dangerouslyAllowBrowser: true,
-			});
-		}
-		// openAI
-		return new OpenAI({
-			apiKey: this.plugin.settings.openAIAPIKey,
-			dangerouslyAllowBrowser: true,
-		});
+		return createOpenAICompatibleClient(this.plugin.settings, modelType);
 	}
 
 	private async claudeCodeCanUseTool(

@@ -28,7 +28,7 @@ Both use the shared `renderGuidanceFilePicker()` helper in `LLMSettingsModal` (p
 
 **Settings** (`obsidianAgentSettings`, deep-merged): `enabled` (toggling regenerates the FAB), `enableWebSearch` (placeholder), `availableSkills` / `availableAssistants` (`Record<string, boolean>`; missing keys = available), `agentGuidanceFile`.
 
-**Dynamic tools**: `ObsidianToolRegistry.registerDynamicTool(def, executor)` adds tools at runtime. `AgentLoop` optional constructor args: `extraSetup?: (registry) => void` (8th), `chatHistory?: ChatHistory` (9th, forwarded to the registry).
+**Dynamic tools**: `ObsidianToolRegistry.registerDynamicTool(def, executor)` adds tools at runtime. `AgentLoop` optional constructor args: `extraSetup?: (registry) => void` (8th), `chatHistory?: ChatHistory` (9th, forwarded to the registry), `searxngService` (10th), `options?: AgentLoopOptions` (11th — `toolGuard` / `requestUsage`, used by headless Loops; see `loops.md`).
 
 **`get_chat_history` tool** (static, in `ALL_TOOL_DEFINITIONS`): action `list` (filenames + mtimes; `limit`, `filter_project`, `filter_agent`) and action `load` (full metadata + parsed turns). `runAgentMode` passes `this.plugin.chatHistory` when `chatHistoryEnabled`. `buildSystemPrompt()` injects a `## Chat History` section describing folder paths.
 

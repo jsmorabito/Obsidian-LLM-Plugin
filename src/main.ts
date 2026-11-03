@@ -7,6 +7,7 @@ import {
 	HistoryItem,
 	ImageQuality,
 	ImageSize,
+	LoopSettings,
 	McpServerSettings,
 	MemorySettings,
 	ObsidianAgentSettings,
@@ -27,6 +28,10 @@ import { AssistantManager } from "Assistants/AssistantManager";
 import { ProjectManager } from "Projects/ProjectManager";
 import { MemoryService } from "Memory/MemoryService";
 import { SkillRegistry } from "Skills/SkillRegistry";
+import { LoopManager } from "Loops/LoopManager";
+import { LoopRunner } from "Loops/LoopRunner";
+import { LoopScheduler } from "Loops/LoopScheduler";
+import { LoopPickerModal } from "Loops/LoopPickerModal";
 import { VaultIndexer } from "RAG/VaultIndexer";
 import { VectorStore } from "RAG/VectorStore";
 import { EmbeddingService, DEFAULT_EMBEDDING_MODELS } from "RAG/EmbeddingService";
@@ -138,6 +143,8 @@ export interface LLMPluginSettings {
 	 * a clean, uncluttered experience.
 	 */
 	featureSettings: FeatureSettings;
+	/** Loops runtime state (lastRunAt / verdicts), keyed by loop id. Definitions live in LOOP.md. */
+	loopSettings: LoopSettings;
 	/**
 	 * Vault-relative path to the general instructions file injected into every
 	 * conversation (all models, assistants, and the Obsidian Agent).
@@ -296,6 +303,10 @@ export const DEFAULT_SETTINGS: LLMPluginSettings = {
 		memory: false,
 		vaultSearch: false,
 		mcpServer: false,
+		loops: false,
+	},
+	loopSettings: {
+		loops: {},
 	},
 };
 
@@ -358,6 +369,12 @@ export default class LLMPlugin extends Plugin {
 	projectManager!: ProjectManager;
 	/** Assistants registry — always initialized; folder derived from rootVaultFolder. */
 	assistantManager!: AssistantManager;
+	/** Loops registry — always initialized; folder derived from rootVaultFolder. */
+	loopManager!: LoopManager;
+	/** Headless loop executor (serial queue). */
+	loopRunner!: LoopRunner;
+	/** Fires on-startup / interval loop triggers while the Loops feature gate is on. */
+	loopScheduler!: LoopScheduler;
 	/** Obsidian Agent — always initialized; active when obsidianAgentSettings.enabled is true. */
 	obsidianAgent!: ObsidianAgent;
 	/** Whisper transcription service — null if whisperSettings.enabled is false. */
@@ -452,6 +469,9 @@ export default class LLMPlugin extends Plugin {
 		this.projectManager = new ProjectManager(this.app);
 		this.assistantManager = new AssistantManager(this.app);
 		this.obsidianAgent = new ObsidianAgent(this);
+		this.loopManager = new LoopManager(this.app);
+		this.loopRunner = new LoopRunner(this);
+		this.loopScheduler = new LoopScheduler(this);
 		// Skills, Projects, and Assistants are in the vault — wait for layout ready before scanning.
 		// Only initialise if the user has configured a root vault folder; otherwise these are no-ops
 		// and no folders are created (consistent with Obsidian's own core plugin behaviour).
@@ -461,10 +481,13 @@ export default class LLMPlugin extends Plugin {
 				await this.skillRegistry.setFolder(this.skillsFolder);
 				await this.projectManager.setFolder(this.projectsFolder);
 				await this.assistantManager.setFolder(this.assistantsFolder);
+				await this.loopManager.setFolder(this.loopsFolder);
 			}
 			this.registerSkillVaultEvents();
 			this.registerProjectVaultEvents();
 			this.registerAssistantVaultEvents();
+			this.registerLoopVaultEvents();
+			this.loopScheduler.start();
 		});
 		this.registerOllamaModels();
 		this.registerLMStudioModels();
@@ -821,6 +844,24 @@ export default class LLMPlugin extends Plugin {
 	}
 
 	/**
+	 * Derived path to the Loops folder: "<rootVaultFolder>/Loops".
+	 */
+	get loopsFolder(): string {
+		return this.settings.rootVaultFolder
+			? normalizePath(this.settings.rootVaultFolder + "/Loops")
+			: "";
+	}
+
+	/**
+	 * Re-initialise the LoopManager from current settings.
+	 * Call after the root vault folder setting changes.
+	 */
+	async reinitLoopManager(): Promise<void> {
+		if (!this.settings.rootVaultFolder) return;
+		await this.loopManager.setFolder(this.loopsFolder);
+	}
+
+	/**
 	 * Re-initialise the ProjectManager from current settings.
 	 * Call after the root vault folder setting changes.
 	 */
@@ -914,6 +955,35 @@ export default class LLMPlugin extends Plugin {
 				if (this.projectManager.isProjectFile(file.path)) {
 					await this.projectManager.loadProjectByPath(file.path);
 				}
+			})
+		);
+	}
+
+	/**
+	 * Register vault events to keep the LoopManager hot-reloaded whenever
+	 * LOOP.md files are created, modified, deleted, or renamed. Run logs,
+	 * STATE.md, and drafts are ignored by isLoopFile().
+	 */
+	private registerLoopVaultEvents(): void {
+		this.registerEvent(
+			this.app.vault.on("create", async (file) => {
+				if (this.loopManager.isLoopFile(file.path)) await this.loopManager.loadLoopByPath(file.path);
+			})
+		);
+		this.registerEvent(
+			this.app.vault.on("modify", async (file) => {
+				if (this.loopManager.isLoopFile(file.path)) await this.loopManager.loadLoopByPath(file.path);
+			})
+		);
+		this.registerEvent(
+			this.app.vault.on("delete", (file) => {
+				if (this.loopManager.isLoopFile(file.path)) this.loopManager.removeByPath(file.path);
+			})
+		);
+		this.registerEvent(
+			this.app.vault.on("rename", async (file, oldPath) => {
+				if (this.loopManager.isLoopFile(oldPath)) this.loopManager.removeByPath(oldPath);
+				if (this.loopManager.isLoopFile(file.path)) await this.loopManager.loadLoopByPath(file.path);
 			})
 		);
 	}
@@ -1106,6 +1176,7 @@ export default class LLMPlugin extends Plugin {
 	}
 
 	onunload() {
+		this.loopRunner?.abortAll();
 		// Cancel any pending RAG debounce timers so they don't fire after the
 		// plugin is torn down and try to write to a null vaultIndexer.
 		for (const timer of this.ragDebounceTimers.values()) {
@@ -1190,6 +1261,28 @@ export default class LLMPlugin extends Plugin {
 			name: "Open Chat Details panel",
 			callback: () => {
 				void this.activateChatDetailsPanel();
+			},
+		});
+
+		// ── Loop commands ─────────────────────────────────────────────────────
+		this.addCommand({
+			id: "run-loop",
+			name: "Run loop…",
+			checkCallback: (checking) => {
+				if (!this.settings.featureSettings?.loops) return false;
+				if (this.loopManager.getLoops().length === 0) return false;
+				if (!checking) new LoopPickerModal(this).open();
+				return true;
+			},
+		});
+
+		this.addCommand({
+			id: "stop-loops",
+			name: "Stop running loops",
+			checkCallback: (checking) => {
+				if (!this.settings.featureSettings?.loops) return false;
+				if (!checking) this.loopRunner.abortAll();
+				return true;
 			},
 		});
 

@@ -95,7 +95,8 @@ export type PermissionMode =
 	| "ask"           // Auto-approve safe (read-only) tools; ask for write/danger
 	| "auto-approve"  // Never ask — execute all tools automatically
 	| "ask-everything"// Always ask, even for read-only tools
-	| "read-only";    // Only allow safe tools; silently deny write/danger
+	| "read-only"     // Only allow safe tools; silently deny write/danger
+	| "staging";      // Headless loops: allow safe + write (confined by a ToolGuard); deny danger
 
 /** Risk level assigned to each tool in ObsidianToolRegistry. */
 export type RiskTier = "safe" | "write" | "danger";
@@ -346,6 +347,31 @@ export type FeatureSettings = {
 	vaultSearch: boolean;
 	/** Master gate for the built-in MCP server feature. */
 	mcpServer: boolean;
+	/** Master gate for Loops (scheduled, verified, headless agent runs). */
+	loops: boolean;
+};
+
+/** Outcome of the verifier pass for one loop run. `none` = no verifier configured. */
+export type LoopVerdict = "PASS" | "FAIL" | "none";
+
+/** How a loop run ended. */
+export type LoopRunStatus = "ok" | "error" | "aborted" | "budget-exceeded";
+
+/** Per-loop scheduling state persisted in data.json (survives restarts). */
+export type LoopRuntimeState = {
+	/** Epoch ms of the last run start. */
+	lastRunAt: number;
+	lastStatus: LoopRunStatus;
+	lastVerdict: LoopVerdict;
+	/** Verifier FAIL reasons from the last run — injected into the next run's context. */
+	lastFailReasons: string[];
+	/** Monotonic run counter. */
+	runCount: number;
+};
+
+export type LoopSettings = {
+	/** Runtime state keyed by loop id (folder name). */
+	loops: Record<string, LoopRuntimeState>;
 };
 
 export type WhisperBackend = "openai" | "sidecar";
